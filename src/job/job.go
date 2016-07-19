@@ -21,6 +21,8 @@ type Job struct {
 	Name string
 	// JArgs job arguments
 	JArgs Args
+	// CmdlineBuilder command line builder
+	CmdlineBuilder CmdlineArgBuilder
 }
 
 // Info descriptor

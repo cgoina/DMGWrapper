@@ -108,7 +108,7 @@ type LocalDmgServer struct {
 
 // Process launches the server
 func (ls LocalDmgServer) Process(j job.Job) (job.Info, error) {
-	cmdargs, err := prepareServerArgs(j.JArgs)
+	cmdargs, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
 	if err != nil {
 		return nil, fmt.Errorf("Error preparing the command line arguments: %v", err)
 	}
@@ -131,7 +131,12 @@ func (ls LocalDmgServer) Process(j job.Job) (job.Info, error) {
 	return lci, err
 }
 
-func prepareServerArgs(a job.Args) ([]string, error) {
+// ServerCmdlineBuilder - DMG server command line builder
+type ServerCmdlineBuilder struct {
+}
+
+// GetCmdlineArgs server command line builder method
+func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var dmgAttrs Attrs

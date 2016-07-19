@@ -29,18 +29,18 @@ func main() {
 
 	dmgAttrs := &dmg.Attrs{}
 	cmdFlags := registerArgs()
-	cmd := job.NewCmd(dmgAttrs)
+	cmdArgs := job.NewArgs(dmgAttrs)
 
 	parseArgs(cmdFlags)
 	if helpFlag {
-		printDefaults(cmdFlags, cmd.CliArgs.Flags)
+		printDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(0)
 	}
 
 	leftArgs := cmdFlags.NArg()
 	if leftArgs < 1 {
 		log.Println("Action is required")
-		printDefaults(cmdFlags, cmd.CliArgs.Flags)
+		printDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(1)
 	}
 
@@ -48,10 +48,10 @@ func main() {
 	jobAction = job.ActionType(os.Args[len(os.Args)-leftArgs])
 
 	// parse the rest of the command line arguments
-	cmd.CliArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
+	cmdArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
 
 	if dmgAttrs.IsHelpFlagSet() {
-		printDefaults(cmdFlags, cmd.CliArgs.Flags)
+		printDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(0)
 	}
 	// read the configuration(s)
@@ -61,9 +61,10 @@ func main() {
 	}
 
 	job := job.Job{
-		Executable: resources.GetStringProperty("dmgServer"),
-		Action:     jobAction,
-		JArgs:      cmd.CliArgs,
+		Executable:     resources.GetStringProperty("dmgServer"),
+		Action:         jobAction,
+		JArgs:          *cmdArgs,
+		CmdlineBuilder: dmg.ServerCmdlineBuilder{},
 	}
 	dmgs := createDMGServer(*resources)
 	jobInfo, err := dmgs.Process(job)

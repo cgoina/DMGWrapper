@@ -31,26 +31,11 @@ func (vl *ValueList) Get() interface{} {
 	return []string(*vl)
 }
 
-// Cmd defines a command line
-type Cmd struct {
-	// Flags are the specific command line flags
-	CliArgs Args
-}
-
-// CmdFlagsCtor command flags constructor
-type CmdFlagsCtor interface {
+// FlagsCtor command flags constructor
+type FlagsCtor interface {
 	Name() string
 	DefineArgs(fs *flag.FlagSet)
 	IsHelpFlagSet() bool
-}
-
-// NewCmd creates a new command
-func NewCmd(flagsCtor CmdFlagsCtor) *Cmd {
-	c := &Cmd{}
-	c.CliArgs.Flags = flag.NewFlagSet(flagsCtor.Name(), flag.ExitOnError)
-	c.CliArgs.changedArgs = make(map[string]flag.Flag)
-	flagsCtor.DefineArgs(c.CliArgs.Flags)
-	return c
 }
 
 // Args - command line arguments
@@ -58,6 +43,15 @@ type Args struct {
 	Flags       *flag.FlagSet
 	config      config.Config
 	changedArgs map[string]flag.Flag
+}
+
+// NewArgs creates a argument set
+func NewArgs(flagsCtor FlagsCtor) *Args {
+	args := &Args{}
+	args.Flags = flag.NewFlagSet(flagsCtor.Name(), flag.ExitOnError)
+	args.changedArgs = make(map[string]flag.Flag)
+	flagsCtor.DefineArgs(args.Flags)
+	return args
 }
 
 // GetArgValue return the value of the argument with the specified name
@@ -116,20 +110,6 @@ func (a Args) GetStringArgValue(name string) (string, error) {
 	return v.(string), nil
 }
 
-// GetCmdline return the command line arguments
-func (a Args) GetCmdline() []string {
-	var cmdargs []string
-	for _, f := range a.changedArgs {
-		cmdargs = append(cmdargs, "-"+f.Name, f.Value.String())
-	}
-	a.Flags.Visit(func(f *flag.Flag) {
-		if _, ok := a.changedArgs[f.Name]; !ok {
-			cmdargs = append(cmdargs, "-"+f.Name, f.Value.String())
-		}
-	})
-	return cmdargs
-}
-
 // AddArgs append the list of arguments to the current arglist
 func AddArgs(arglist []string, args ...string) []string {
 	return append(arglist, args...)
@@ -173,4 +153,9 @@ func AddFloatArg(arglist []string, name string, value float64, prec, bitSize int
 
 func argFrom(name, value, separator string) string {
 	return name + separator + value
+}
+
+// CmdlineArgBuilder creates command line arguments
+type CmdlineArgBuilder interface {
+	GetCmdlineArgs(a Args) ([]string, error)
 }
