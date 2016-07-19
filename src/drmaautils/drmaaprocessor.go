@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"config"
@@ -44,16 +46,48 @@ type GridJobInfo struct {
 	jobTimeoutInSec int64
 }
 
+// JobStdout get the job standard output
 func (gji GridJobInfo) JobStdout() (io.ReadCloser, error) {
-	// !!!!! TODO
-	return nil, nil
+	var logDir string
+	jobID := gji.jobInfo.ID
+	if gji.jt.OutputPath != "" {
+		logDir = strings.TrimSuffix(gji.jt.OutputPath, "/")
+	} else {
+		logDir = strings.TrimSuffix(gji.jt.WorkingDirectory, "/")
+	}
+	outputPattern := logDir + "/*.o" + jobID
+	return gji.openJobOutputFile(outputPattern)
 }
 
+// JobStderr get the job standard error
 func (gji GridJobInfo) JobStderr() (io.ReadCloser, error) {
-	// !!!!! TODO
-	return nil, nil
+	var logDir string
+	jobID := gji.jobInfo.ID
+	if gji.jt.ErrorPath != "" {
+		logDir = strings.TrimSuffix(gji.jt.ErrorPath, "/")
+	} else {
+		logDir = strings.TrimSuffix(gji.jt.WorkingDirectory, "/")
+	}
+	outputPattern := logDir + "/*.e" + jobID
+	return gji.openJobOutputFile(outputPattern)
 }
 
+func (gji GridJobInfo) openJobOutputFile(outputPattern string) (io.ReadCloser, error) {
+	outputCandidates, err := filepath.Glob(outputPattern)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid output pattern %s: %v", outputPattern, err)
+	}
+	if outputCandidates == nil {
+		return nil, fmt.Errorf("No file found that matches %s", outputPattern)
+	}
+	if len(outputCandidates) > 1 {
+		return nil, fmt.Errorf("Found more than one match for %s: %v", outputPattern, outputCandidates)
+	}
+	log.Printf("Opening %s", outputCandidates[0])
+	return os.Open(outputCandidates[0])
+}
+
+// WaitForTermination wait for job's completion
 func (gji GridJobInfo) WaitForTermination() error {
 	quit := make(chan struct{})
 	if gji.jobTimeoutInSec > 0 {
@@ -84,7 +118,7 @@ func (gji GridJobInfo) WaitForTermination() error {
 }
 
 // Process submits a single job to the grid
-func (p *GridProcessor) Process(j job.Job) (job.JobInfo, error) {
+func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
 	var (
 		jt       JobTemplate
 		jobInfo  *JobInfo
@@ -97,7 +131,7 @@ func (p *GridProcessor) Process(j job.Job) (job.JobInfo, error) {
 			err = fmt.Errorf("Panic while processing job %s, %v: %r", jt.RemoteCommand, jt.Args, r)
 		}
 	}()
-	jt.RemoteCommand = p.resources.GetStringProperty("mipmapsExec")
+	jt.RemoteCommand = j.Executable
 	cmdline := j.JArgs.GetCmdline()
 	jt.Args = make([]string, len(cmdline)+1, len(cmdline)+1)
 	jt.Args[0] = string(j.Action)

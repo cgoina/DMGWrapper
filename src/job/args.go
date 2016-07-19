@@ -26,6 +26,7 @@ func (vl *ValueList) Set(value string) error {
 	return nil
 }
 
+// Get Value Getter method
 func (vl *ValueList) Get() interface{} {
 	return []string(*vl)
 }

@@ -84,7 +84,7 @@ func (a *Attrs) extractDmgAttrs(ja job.Args) (err error) {
 
 // localCmdInfo local process info
 type localCmdInfo struct {
-	cmd        *exec.Cmd
+	cmd       *exec.Cmd
 	jobStdout io.ReadCloser
 	jobStderr io.ReadCloser
 }
@@ -107,12 +107,12 @@ type LocalDmgServer struct {
 }
 
 // Process launches the server
-func (ls LocalDmgServer) Process(j job.Job) (job.JobInfo, error) {
+func (ls LocalDmgServer) Process(j job.Job) (job.Info, error) {
 	cmdargs, err := prepareServerArgs(j.JArgs)
 	if err != nil {
 		return nil, fmt.Errorf("Error preparing the command line arguments: %v", err)
 	}
-	cmd := exec.Command(ls.Resources.GetStringProperty("dmgServer"), cmdargs...)
+	cmd := exec.Command(j.Executable, cmdargs...)
 	log.Printf("Execute %v\n", cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -123,7 +123,7 @@ func (ls LocalDmgServer) Process(j job.Job) (job.JobInfo, error) {
 		return nil, fmt.Errorf("Error opening the command stderr: %v", err)
 	}
 	lci := &localCmdInfo{
-		cmd:        cmd,
+		cmd:       cmd,
 		jobStdout: stdout,
 		jobStderr: stderr,
 	}

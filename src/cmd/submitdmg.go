@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
-	"bufio"
 	"log"
 	"os"
 
 	"config"
 	"dmg"
+	"drmaautils"
 	"job"
 )
 
@@ -23,7 +24,7 @@ var (
 
 func main() {
 	var (
-		err      error
+		err error
 	)
 
 	dmgAttrs := &dmg.Attrs{}
@@ -48,7 +49,7 @@ func main() {
 
 	// parse the rest of the command line arguments
 	cmd.CliArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
-	
+
 	if dmgAttrs.IsHelpFlagSet() {
 		printDefaults(cmdFlags, cmd.CliArgs.Flags)
 		os.Exit(0)
@@ -60,11 +61,12 @@ func main() {
 	}
 
 	job := job.Job{
-		Action: jobAction,
-		JArgs:  cmd.CliArgs,
+		Executable: resources.GetStringProperty("dmgServer"),
+		Action:     jobAction,
+		JArgs:      cmd.CliArgs,
 	}
-	dmgs := &dmg.LocalDmgServer{*resources}
-	jobInfo, err := dmgs.Process(job);
+	dmgs := createDMGServer(*resources)
+	jobInfo, err := dmgs.Process(job)
 	if err != nil {
 		log.Fatalf("Error invoking the DMG Server")
 	}
@@ -110,4 +112,12 @@ func printDefaults(fs ...*flag.FlagSet) {
 	for _, f := range fs {
 		f.PrintDefaults()
 	}
+}
+
+func createDMGServer(resources config.Config) job.Processor {
+	dmgs, err := drmaautils.NewGridProcessor(sessionName, accountingID, drmaautils.NewDRMAAV1Proxy(), resources)
+	if err != nil {
+		log.Fatalf("Error instantiating the DMG Server")
+	}
+	return dmgs
 }

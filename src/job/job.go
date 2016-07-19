@@ -13,6 +13,8 @@ type ActionType string
 
 // Job - mipmaps job
 type Job struct {
+	// Executable is the job's executable program
+	Executable string
 	// Action defines the job's action
 	Action ActionType
 	// Name job name
@@ -21,8 +23,8 @@ type Job struct {
 	JArgs Args
 }
 
-// JobInfo descriptor
-type JobInfo interface {
+// Info descriptor
+type Info interface {
 	JobStdout() (io.ReadCloser, error)
 	JobStderr() (io.ReadCloser, error)
 	WaitForTermination() error
@@ -30,7 +32,7 @@ type JobInfo interface {
 
 // Processor is responsible with processing a single job
 type Processor interface {
-	Process(j Job) (JobInfo, error)
+	Process(j Job) (Info, error)
 }
 
 // ParallelProcessor is responsible with splitting a job into multiple smaller jobs
@@ -58,24 +60,27 @@ func NewParallelProcessor(jobProcessor Processor, jobSplitter Splitter, resource
 	}
 }
 
-// ParallelJobInfo information about a parallel job
+// ParallelJob information about a parallel job
 type ParallelJob struct {
 }
 
+// JobStdout a parallel job's standard output
 func (pj ParallelJob) JobStdout() (io.ReadCloser, error) {
 	return os.Stdout, nil
 }
 
+// JobStderr a parallel job's standard error
 func (pj ParallelJob) JobStderr() (io.ReadCloser, error) {
 	return os.Stderr, nil
 }
 
+// WaitForTermination wait for job's completion
 func (pj ParallelJob) WaitForTermination() error {
 	return nil
 }
 
 // Process the given job
-func (p *ParallelProcessor) Process(j Job) (JobInfo, error) {
+func (p *ParallelProcessor) Process(j Job) (Info, error) {
 	maxRunningJobs := p.resources.GetIntProperty("maxRunningJobs")
 	if maxRunningJobs <= 0 {
 		maxRunningJobs = 1

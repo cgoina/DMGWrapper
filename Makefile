@@ -23,3 +23,4 @@ build:
 	@go build src/cmd/submitdmg.go
 
 clean:
+	@rm -f submitdmg
