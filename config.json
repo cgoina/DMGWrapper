@@ -1,0 +1,19 @@
+{
+    "dmgServer": "/Users/goinac/work/misc/image-processing/dmg-intensity-correction/Bin/Server",
+    "dmgClient": "/Users/goinac/work/misc/image-processing/dmg-intensity-correction/Bin/Client",
+    "ugeQueue": "",
+    "ugeResources": {
+        "scalityr": "1",
+	"scalityw": "1",
+	"sandy": "true"
+    },
+    "ugeJobEnvironment": {
+    },
+    "ugeParallelEnvironment": "batch",
+    "ugeMinSlots": 8,
+    "ugeMaxSlots": 0,
+    "outputDir": "logs",
+    "errorDir": "logs",
+    "maxRunningJobs": 100,
+    "jobQueueSize": 100
+}
