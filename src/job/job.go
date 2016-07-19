@@ -1,9 +1,9 @@
 package job
 
 import (
-	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"config"
 )
@@ -23,7 +23,8 @@ type Job struct {
 
 // JobInfo descriptor
 type JobInfo interface {
-	StdoutPipe() (io.ReadCloser, error)
+	JobStdout() (io.ReadCloser, error)
+	JobStderr() (io.ReadCloser, error)
 	WaitForTermination() error
 }
 
@@ -61,8 +62,12 @@ func NewParallelProcessor(jobProcessor Processor, jobSplitter Splitter, resource
 type ParallelJob struct {
 }
 
-func (pj ParallelJob) StdoutPipe() (io.ReadCloser, error) {
-	return nil, fmt.Errorf("Method not supported")
+func (pj ParallelJob) JobStdout() (io.ReadCloser, error) {
+	return os.Stdout, nil
+}
+
+func (pj ParallelJob) JobStderr() (io.ReadCloser, error) {
+	return os.Stderr, nil
 }
 
 func (pj ParallelJob) WaitForTermination() error {

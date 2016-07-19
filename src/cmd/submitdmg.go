@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"bufio"
 	"log"
 	"os"
 
@@ -44,12 +45,9 @@ func main() {
 
 	var jobAction job.ActionType
 	jobAction = job.ActionType(os.Args[len(os.Args)-leftArgs])
-	fmt.Printf("!!!! ACTION PARAM %v\n", jobAction)
 
 	// parse the rest of the command line arguments
 	cmd.CliArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
-
-	fmt.Printf("!!!! ACTION PARAM %v\n", jobAction)
 	
 	if dmgAttrs.IsHelpFlagSet() {
 		printDefaults(cmdFlags, cmd.CliArgs.Flags)
@@ -66,11 +64,19 @@ func main() {
 		JArgs:  cmd.CliArgs,
 	}
 	dmgs := &dmg.LocalDmgServer{*resources}
-	fmt.Printf("!!!!! %v %v\n", job, dmgs)
 	jobInfo, err := dmgs.Process(job);
 	if err != nil {
 		log.Fatalf("Error invoking the DMG Server")
 	}
+	jobOutput, err := jobInfo.JobStdout()
+	if err != nil {
+		log.Printf("Error getting job's output")
+	}
+	r := bufio.NewReader(jobOutput)
+	fmt.Printf("!!!! READ\n")
+	line, n, err := r.ReadLine()
+	fmt.Printf("!!!!! n=%d err=%v, BUF %s !!!!!\n", n, err, line)
+
 	if err = jobInfo.WaitForTermination(); err != nil {
 		log.Fatalf("Error waiting for the DMG Server to terminate")
 	}

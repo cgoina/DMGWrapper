@@ -44,7 +44,12 @@ type GridJobInfo struct {
 	jobTimeoutInSec int64
 }
 
-func (gji GridJobInfo) StdoutPipe() (io.ReadCloser, error) {
+func (gji GridJobInfo) JobStdout() (io.ReadCloser, error) {
+	// !!!!! TODO
+	return nil, nil
+}
+
+func (gji GridJobInfo) JobStderr() (io.ReadCloser, error) {
 	// !!!!! TODO
 	return nil, nil
 }

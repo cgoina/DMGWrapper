@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"os/exec"
 	"strconv"
 
@@ -86,14 +85,19 @@ func (a *Attrs) extractDmgAttrs(ja job.Args) (err error) {
 // localCmdInfo local process info
 type localCmdInfo struct {
 	cmd        *exec.Cmd
-	stdoutPipe io.ReadCloser
+	jobStdout io.ReadCloser
+	jobStderr io.ReadCloser
 }
 
-func (lci localCmdInfo) StdoutPipe() (io.ReadCloser, error) {
-	return lci.stdoutPipe, nil
+func (lci *localCmdInfo) JobStdout() (io.ReadCloser, error) {
+	return lci.jobStdout, nil
 }
 
-func (lci localCmdInfo) WaitForTermination() error {
+func (lci *localCmdInfo) JobStderr() (io.ReadCloser, error) {
+	return lci.jobStderr, nil
+}
+
+func (lci *localCmdInfo) WaitForTermination() error {
 	return lci.cmd.Wait()
 }
 
@@ -114,11 +118,16 @@ func (ls LocalDmgServer) Process(j job.Job) (job.JobInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error opening the command stdout: %v", err)
 	}
-	lci := localCmdInfo{
-		cmd:        cmd,
-		stdoutPipe: stdout,
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("Error opening the command stderr: %v", err)
 	}
-	err = execCmd(cmd)
+	lci := &localCmdInfo{
+		cmd:        cmd,
+		jobStdout: stdout,
+		jobStderr: stderr,
+	}
+	err = cmd.Start()
 	return lci, err
 }
 
@@ -146,22 +155,6 @@ func prepareServerArgs(a job.Args) ([]string, error) {
 	}
 	// !!!!! TODO
 	return cmdargs, nil
-}
-
-func execCmd(cmd *exec.Cmd) error {
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Start()
-	if err != nil {
-		log.Printf("Error starting the command: %v", err)
-		return err
-	}
-	if err = cmd.Wait(); err != nil {
-		log.Printf("Command finished with error: %v", err)
-		return err
-	}
-	log.Printf("Command completed successfully")
-	return err
 }
 
 // LocalDmgClient - in charge with starting a DMG Client process
