@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"config"
 	"dmg"
@@ -76,9 +77,12 @@ func main() {
 		log.Printf("Error getting job's output")
 	}
 	r := bufio.NewReader(jobOutput)
-	fmt.Printf("!!!! READ\n")
-	line, n, err := r.ReadLine()
-	fmt.Printf("!!!!! n=%d err=%v, BUF %s !!!!!\n", n, err, line)
+	for i := 0 ; i < 10; i++ {
+		fmt.Printf("!!!! READ\n")
+		line, n, err := r.ReadLine()
+		fmt.Printf("!!!!! n=%d err=%v, BUF %s !!!!!\n", n, err, line)
+		time.Sleep(30 * time.Second)
+	}
 
 	if err = jobInfo.WaitForTermination(); err != nil {
 		log.Fatalf("Error waiting for the DMG Server to terminate")
