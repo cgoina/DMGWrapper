@@ -42,21 +42,23 @@ type FlagsCtor interface {
 type Args struct {
 	Flags       *flag.FlagSet
 	config      config.Config
-	changedArgs map[string]flag.Flag
+	changedArgs flag.FlagSet
 }
 
 // NewArgs creates a argument set
 func NewArgs(flagsCtor FlagsCtor) *Args {
 	args := &Args{}
 	args.Flags = flag.NewFlagSet(flagsCtor.Name(), flag.ExitOnError)
-	args.changedArgs = make(map[string]flag.Flag)
 	flagsCtor.DefineArgs(args.Flags)
 	return args
 }
 
 // GetArgValue return the value of the argument with the specified name
 func (a Args) GetArgValue(name string) (v interface{}, err error) {
-	f := a.Flags.Lookup(name)
+	f := a.changedArgs.Lookup(name)
+	if f == nil {
+		f = a.Flags.Lookup(name)
+	}
 	if f == nil {
 		return 0, fmt.Errorf("No flag found for %s", name)
 	}
@@ -80,6 +82,20 @@ func (a Args) GetBoolArgValue(name string) (bool, error) {
 		}
 	}()
 	return v.(bool), nil
+}
+
+// GetFloat64ArgValue retrieve argument's value as an float64
+func (a Args) GetFloat64ArgValue(name string) (float64, error) {
+	v, err := a.GetArgValue(name)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("GetIntArgValue error: %v", r)
+		}
+	}()
+	return v.(float64), nil
 }
 
 // GetIntArgValue retrieve argument's value as an int
@@ -108,6 +124,17 @@ func (a Args) GetStringArgValue(name string) (string, error) {
 		}
 	}()
 	return v.(string), nil
+}
+
+// UpdateIntArg
+func (a *Args) UpdateIntArg(name string, value int) {
+	f := a.changedArgs.Lookup(name)
+	if f != nil {
+		f.Value.Set(strconv.FormatInt(int64(value), 10))
+	} else {
+		valRef := a.changedArgs.Int(name, value, "")
+		*valRef = value
+	}
 }
 
 // AddArgs append the list of arguments to the current arglist

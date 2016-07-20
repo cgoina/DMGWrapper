@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"config"
@@ -21,6 +23,12 @@ var (
 	destroySession   bool
 	jobProcessorType string
 	helpFlag         bool
+)
+
+const (
+	pauseBetweenChecksInSec = 10
+	maxChecks               = 100
+	serverAddressPrefix     = "Server Address: "
 )
 
 func main() {
@@ -68,22 +76,11 @@ func main() {
 		CmdlineBuilder: dmg.ServerCmdlineBuilder{},
 	}
 	dmgs := createDMGServer(*resources)
-	jobInfo, err := dmgs.Process(job)
+	jobInfo, serverAddress, err := startDMGServer(dmgs, job)
 	if err != nil {
-		log.Fatalf("Error invoking the DMG Server")
+		log.Fatalf("Error waiting for the DMG Server to start: %v", err)
 	}
-	jobOutput, err := jobInfo.JobStdout()
-	if err != nil {
-		log.Printf("Error getting job's output")
-	}
-	r := bufio.NewReader(jobOutput)
-	for i := 0 ; i < 10; i++ {
-		fmt.Printf("!!!! READ\n")
-		line, n, err := r.ReadLine()
-		fmt.Printf("!!!!! n=%d err=%v, BUF %s !!!!!\n", n, err, line)
-		time.Sleep(30 * time.Second)
-	}
-
+	log.Printf("Found Server Address: %s", serverAddress)
 	if err = jobInfo.WaitForTermination(); err != nil {
 		log.Fatalf("Error waiting for the DMG Server to terminate")
 	}
@@ -125,4 +122,36 @@ func createDMGServer(resources config.Config) job.Processor {
 		log.Fatalf("Error instantiating the DMG Server")
 	}
 	return dmgs
+}
+
+func startDMGServer(sp job.Processor, j job.Job) (job.Info, string, error) {
+	jobInfo, err := sp.Process(j)
+	if err != nil {
+		return jobInfo, "", err
+	}
+	jobOutput, err := jobInfo.JobStdout()
+	if err != nil {
+		return jobInfo, "", err
+	}
+	r := bufio.NewReader(jobOutput)
+	for i := 0; i < maxChecks; i++ {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				// there was no new output since the last read
+				time.Sleep(pauseBetweenChecksInSec * time.Second)
+				continue
+			}
+			// there was some other error than EOF so stop here
+			return jobInfo, "", err
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, serverAddressPrefix) {
+			serverAddress := strings.TrimLeft(line, serverAddressPrefix)
+			fmt.Printf("!!!!! SERVER ADDRESS IS:%s!!!!\n", serverAddress)
+			return jobInfo, serverAddress, nil
+		}
+		time.Sleep(pauseBetweenChecksInSec * time.Second)
+	}
+	return jobInfo, "", fmt.Errorf("Timeout - could not read server's address")
 }
