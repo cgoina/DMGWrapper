@@ -133,9 +133,8 @@ func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
 	}()
 	jt.RemoteCommand = j.Executable
 	cmdline, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
-	jt.Args = make([]string, len(cmdline)+1, len(cmdline)+1)
-	jt.Args[0] = string(j.Action)
-	copy(jt.Args[1:], cmdline)
+	jt.Args = make([]string, len(cmdline), len(cmdline))
+	copy(jt.Args, cmdline)
 	jt.JobName = j.Name
 	jt.AccountingID = p.accountingID
 	workingDirectory := p.resources.GetStringProperty("workingDir")
