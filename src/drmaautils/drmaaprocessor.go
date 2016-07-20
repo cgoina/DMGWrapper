@@ -88,33 +88,9 @@ func (gji GridJobInfo) openJobOutputFile(outputPattern string) (io.ReadCloser, e
 }
 
 // WaitForTermination wait for job's completion
-func (gji GridJobInfo) WaitForTermination() error {
-	quit := make(chan struct{})
-	if gji.jobTimeoutInSec > 0 {
-		to := time.Duration(gji.jobTimeoutInSec * int64(time.Second))
-		time.AfterFunc(to, func() {
-			var q struct{}
-			quit <- q
-		})
-	}
-	pollingInterval := time.Duration(30 * time.Second)
-	for {
-		select {
-		case <-time.After(pollingInterval):
-			jobStatus, err := checkJobState(gji.jobInfo, gji.js)
-			if err != nil {
-				return fmt.Errorf("Error getting job %s status %v", gji.jobInfo.ID, err)
-			}
-			switch jobStatus {
-			case Done:
-				return nil
-			case Failed:
-				return fmt.Errorf("Job %s failed", gji.jobInfo.ID)
-			}
-		case <-quit:
-			return fmt.Errorf("Job %s timeout", gji.jobInfo.ID)
-		}
-	}
+func (gji GridJobInfo) WaitForTermination() (err error) {
+	_, err = waitForState(gji.jobInfo, gji.js, Unset, gji.jobTimeoutInSec)
+	return err
 }
 
 // Process submits a single job to the grid
@@ -163,6 +139,7 @@ func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
 		return nil, err
 	}
 	log.Printf("Submitted job %s\n", jobInfo.ID)
+	_, err = waitForState(jobInfo, p.js, Running, jTimeout)
 	gji := GridJobInfo{
 		js:              p.js,
 		jt:              &jt,
@@ -170,6 +147,38 @@ func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
 		jobTimeoutInSec: jTimeout,
 	}
 	return gji, err
+}
+
+func waitForState(job *JobInfo, js DRMAASession, desiredState JobState, waitTimeoutInSec int64) (bool, error) {
+	quit := make(chan struct{})
+	if waitTimeoutInSec > 0 {
+		to := time.Duration(waitTimeoutInSec * int64(time.Second))
+		time.AfterFunc(to, func() {
+			var q struct{}
+			quit <- q
+		})
+	}
+	pollingInterval := time.Duration(30 * time.Second)
+	for {
+		select {
+		case <-time.After(pollingInterval):
+			jobStatus, err := checkJobState(job, js)
+			if err != nil {
+				return false, fmt.Errorf("Error getting job %s status %v", job.ID, err)
+			}
+			if desiredState != Unset && desiredState == jobStatus {
+				return true, nil
+			}
+			switch jobStatus {
+			case Done:
+				return false, nil
+			case Failed:
+				return false, fmt.Errorf("Job %s failed", job.ID)
+			}
+		case <-quit:
+			return false, fmt.Errorf("Job %s timeout", job.ID)
+		}
+	}
 }
 
 func checkJobState(job *JobInfo, js DRMAASession) (JobState, error) {
