@@ -1,41 +1,53 @@
 package dmg
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os/exec"
 	"strconv"
+	"strings"
+	"time"
 
+	"arg"
 	"config"
 	"process"
 )
 
+const (
+	pauseBetweenChecksInSec = 10
+	maxChecks               = 100
+	serverAddressPrefix     = "Server Address: "
+)
+
 // Attrs registers DMG client and server attributes
 type Attrs struct {
-	Configs         process.ValueList
-	helpFlag        bool
-	serverAddress   string
-	serverPort      int
-	nSections       int
-	iterations      int
-	vCycles         int
-	iWeight         float64
-	gWeight         float64
-	gScale          float64
-	nThreads        int
-	verbose         bool
-	gray            bool
-	deramp          bool
-	tileExt         string
-	tileWidth       int
-	tileHeight      int
-	clientIndex     int
-	sourceImgPixels string
-	sourceImgLabels string
-	destImg         string
-	scratchDir      string
+	Configs          arg.StringList
+	helpFlag         bool
+	serverAddress    string
+	serverPort       int
+	nSections        int
+	iterations       int
+	vCycles          int
+	iWeight          float64
+	gWeight          float64
+	gScale           float64
+	nThreads         int
+	verbose          bool
+	gray             bool
+	deramp           bool
+	tileExt          string
+	tileWidth        int
+	tileHeight       int
+	clientIndex      int
+	sourcePixelsList arg.StringList
+	sourceLabelsList arg.StringList
+	sourcePixels     string
+	sourceLabels     string
+	destImg          string
+	scratchDir       string
 }
 
 // Name method
@@ -63,8 +75,10 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.BoolVar(&a.helpFlag, "h", false, "gray image flag")
 	fs.IntVar(&a.clientIndex, "clientIndex", 0, "Client index")
 	fs.IntVar(&a.nThreads, "threads", 1, "Number of threads")
-	fs.StringVar(&a.sourceImgPixels, "pixels", "", "Source pixels image")
-	fs.StringVar(&a.sourceImgLabels, "labels", "", "Source labels")
+	fs.Var(&a.sourcePixelsList, "pixelsList", "List of image pixels")
+	fs.Var(&a.sourceLabelsList, "labelsList", "List of image labels")
+	fs.StringVar(&a.sourcePixels, "pixels", "", "Source image pixels")
+	fs.StringVar(&a.sourceLabels, "labels", "", "Source image labels")
 	fs.StringVar(&a.destImg, "out", "", "Destination image")
 	fs.StringVar(&a.scratchDir, "temp", "/var/tmp", "Scratch directory")
 }
@@ -74,7 +88,41 @@ func (a *Attrs) IsHelpFlagSet() bool {
 	return a.helpFlag
 }
 
-func (a *Attrs) extractDmgAttrs(ja process.Args) (err error) {
+// validate arguments
+func (a *Attrs) validate() error {
+	nImages := len(a.sourcePixelsList)
+	if len(a.sourceLabelsList) != nImages {
+		return fmt.Errorf("PixelsList and LabelsList must have the same length")
+	}
+	if nImages == 0 {
+		if a.sourcePixels == "" {
+			return fmt.Errorf("No source pixels has been defined")
+		}
+		if a.sourceLabels == "" {
+			return fmt.Errorf("No source labels has been defined")
+		}
+		if a.nSections > 1 {
+			return fmt.Errorf("The number of sections must be equal to the number of source images")
+		}
+		return nil
+	}
+	if nImages != a.nSections {
+		return fmt.Errorf("The number of sections must be equal to the number of source images")
+	}
+	for i := 0; i < nImages; i++ {
+		sourcePixels := a.sourcePixelsList[i]
+		sourceLabels := a.sourceLabelsList[i]
+		if sourcePixels == "" {
+			return fmt.Errorf("Pixels image not defined at index %d", i)
+		}
+		if sourceLabels == "" {
+			return fmt.Errorf("Labels image not defined at index %d", i)
+		}
+	}
+	return nil
+}
+
+func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
 	if a.serverAddress, err = ja.GetStringArgValue("serverAddress"); err != nil {
 		return err
 	}
@@ -123,13 +171,19 @@ func (a *Attrs) extractDmgAttrs(ja process.Args) (err error) {
 	if a.nThreads, err = ja.GetIntArgValue("threads"); err != nil {
 		return err
 	}
-	if a.sourceImgPixels, err = ja.GetStringArgValue("pixels"); err != nil {
+	if a.sourcePixels, err = ja.GetStringArgValue("pixels"); err != nil {
 		return err
 	}
-	if a.sourceImgLabels, err = ja.GetStringArgValue("labels"); err != nil {
+	if a.sourceLabels, err = ja.GetStringArgValue("labels"); err != nil {
 		return err
 	}
 	if a.destImg, err = ja.GetStringArgValue("out"); err != nil {
+		return err
+	}
+	if a.sourcePixelsList, err = ja.GetStringListArgValue("pixelsList"); err != nil {
+		return err
+	}
+	if a.sourceLabelsList, err = ja.GetStringListArgValue("labelsList"); err != nil {
 		return err
 	}
 	if a.scratchDir, err = ja.GetStringArgValue("temp"); err != nil {
@@ -167,74 +221,73 @@ func (ls LocalDmgProcessor) Process(j process.Job) (process.Info, error) {
 	return processJob(j)
 }
 
-// ServerCmdlineBuilder - DMG server command line builder
-type ServerCmdlineBuilder struct {
+// serverCmdlineBuilder - DMG server command line builder
+type serverCmdlineBuilder struct {
 }
 
 // GetCmdlineArgs server command line builder method
-func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a process.Args) ([]string, error) {
+func (sclb serverCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var dmgAttrs Attrs
 
-	if err = dmgAttrs.extractDmgAttrs(a); err != nil {
+	if err = dmgAttrs.extractDmgAttrs(&a); err != nil {
 		return cmdargs, err
 	}
 	if dmgAttrs.serverPort > 0 {
-		cmdargs = process.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
+		cmdargs = arg.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
-	cmdargs = process.AddArgs(cmdargs, "--count", strconv.FormatInt(int64(dmgAttrs.nSections), 10))
-	cmdargs = process.AddArgs(cmdargs, "--iters", strconv.FormatInt(int64(dmgAttrs.iterations), 10))
-	cmdargs = process.AddArgs(cmdargs, "--vCycles", strconv.FormatInt(int64(dmgAttrs.vCycles), 10))
-	cmdargs = process.AddArgs(cmdargs, "--iWeight", strconv.FormatFloat(dmgAttrs.iWeight, 'g', -1, 64))
-	cmdargs = process.AddArgs(cmdargs, "--gWeight", strconv.FormatFloat(dmgAttrs.gWeight, 'g', -1, 64))
-	cmdargs = process.AddArgs(cmdargs, "--gScale", strconv.FormatFloat(dmgAttrs.gScale, 'g', -1, 64))
-	cmdargs = process.AddArgs(cmdargs, "--tileExt", dmgAttrs.tileExt)
-	cmdargs = process.AddArgs(cmdargs, "--tileWidth", strconv.FormatInt(int64(dmgAttrs.tileWidth), 10))
-	cmdargs = process.AddArgs(cmdargs, "--tileHeight", strconv.FormatInt(int64(dmgAttrs.tileHeight), 10))
+	cmdargs = arg.AddArgs(cmdargs, "--count", strconv.FormatInt(int64(dmgAttrs.nSections), 10))
+	cmdargs = arg.AddArgs(cmdargs, "--iters", strconv.FormatInt(int64(dmgAttrs.iterations), 10))
+	cmdargs = arg.AddArgs(cmdargs, "--vCycles", strconv.FormatInt(int64(dmgAttrs.vCycles), 10))
+	cmdargs = arg.AddArgs(cmdargs, "--iWeight", strconv.FormatFloat(dmgAttrs.iWeight, 'g', -1, 64))
+	cmdargs = arg.AddArgs(cmdargs, "--gWeight", strconv.FormatFloat(dmgAttrs.gWeight, 'g', -1, 64))
+	cmdargs = arg.AddArgs(cmdargs, "--gScale", strconv.FormatFloat(dmgAttrs.gScale, 'g', -1, 64))
+	cmdargs = arg.AddArgs(cmdargs, "--tileExt", dmgAttrs.tileExt)
+	cmdargs = arg.AddArgs(cmdargs, "--tileWidth", strconv.FormatInt(int64(dmgAttrs.tileWidth), 10))
+	cmdargs = arg.AddArgs(cmdargs, "--tileHeight", strconv.FormatInt(int64(dmgAttrs.tileHeight), 10))
 
 	if dmgAttrs.verbose {
-		cmdargs = process.AddArgs(cmdargs, "--verbose")
+		cmdargs = arg.AddArgs(cmdargs, "--verbose")
 	}
 	if dmgAttrs.gray {
-		cmdargs = process.AddArgs(cmdargs, "--gray")
+		cmdargs = arg.AddArgs(cmdargs, "--gray")
 	}
 	if dmgAttrs.deramp {
-		cmdargs = process.AddArgs(cmdargs, "--deramp")
+		cmdargs = arg.AddArgs(cmdargs, "--deramp")
 	}
 	return cmdargs, nil
 }
 
-// ClientCmdlineBuilder - DMG client command line builder
-type ClientCmdlineBuilder struct {
+// clientCmdlineBuilder - DMG client command line builder
+type clientCmdlineBuilder struct {
 }
 
 // GetCmdlineArgs client command line builder method
-func (sclb ClientCmdlineBuilder) GetCmdlineArgs(a process.Args) ([]string, error) {
+func (sclb clientCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var dmgAttrs Attrs
 
-	if err = dmgAttrs.extractDmgAttrs(a); err != nil {
+	if err = dmgAttrs.extractDmgAttrs(&a); err != nil {
 		return cmdargs, err
 	}
 	if dmgAttrs.serverPort > 0 {
-		cmdargs = process.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
+		cmdargs = arg.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
 	if dmgAttrs.serverAddress != "" {
-		cmdargs = process.AddArgs(cmdargs, "--address", dmgAttrs.serverAddress)
+		cmdargs = arg.AddArgs(cmdargs, "--address", dmgAttrs.serverAddress)
 	}
 	if dmgAttrs.clientIndex > 0 {
-		cmdargs = process.AddArgs(cmdargs, "--index", strconv.FormatInt(int64(dmgAttrs.clientIndex), 10))
+		cmdargs = arg.AddArgs(cmdargs, "--index", strconv.FormatInt(int64(dmgAttrs.clientIndex), 10))
 	}
 	if dmgAttrs.nThreads > 1 {
-		cmdargs = process.AddArgs(cmdargs, "--threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10))
+		cmdargs = arg.AddArgs(cmdargs, "--threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10))
 	}
-	cmdargs = process.AddArgs(cmdargs, "--pixels", dmgAttrs.sourceImgPixels)
-	cmdargs = process.AddArgs(cmdargs, "--labels", dmgAttrs.sourceImgLabels)
-	cmdargs = process.AddArgs(cmdargs, "--out", dmgAttrs.destImg)
-	cmdargs = process.AddArgs(cmdargs, "--temp", dmgAttrs.scratchDir)
-	// !!!!! TODO
+	cmdargs = arg.AddArgs(cmdargs, "--pixels", dmgAttrs.sourcePixels)
+	cmdargs = arg.AddArgs(cmdargs, "--labels", dmgAttrs.sourceLabels)
+	cmdargs = arg.AddArgs(cmdargs, "--out", dmgAttrs.destImg)
+	cmdargs = arg.AddArgs(cmdargs, "--temp", dmgAttrs.scratchDir)
 	return cmdargs, nil
 }
 
@@ -260,4 +313,140 @@ func processJob(j process.Job) (process.Info, error) {
 	}
 	err = cmd.Start()
 	return lci, err
+}
+
+// DMGService orchestrates the DMG client and server
+type DMGService struct {
+	DMGProcessor process.Processor
+	Resources    config.Config
+}
+
+// ProcessDMG
+func (s DMGService) ProcessDMG(args *arg.Args) error {
+	var err error
+	var dmgAttrs Attrs
+
+	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
+		return err
+	}
+	if err = dmgAttrs.validate(); err != nil {
+		return err
+	}
+	serverArgs := *args
+	serverJob := process.Job{
+		Executable:     s.Resources.GetStringProperty("dmgServer"),
+		JArgs:          serverArgs,
+		CmdlineBuilder: serverCmdlineBuilder{},
+	}
+	serverJobInfo, serverAddress, err := s.startDMGServer(serverJob)
+	if err != nil {
+		return err
+	}
+	go func() {
+		if waitErr := serverJobInfo.WaitForTermination(); waitErr != nil {
+			log.Printf("Error waiting for the DMG Server to terminate: %v", waitErr)
+		}
+	}()
+
+	clientArgs := *args
+	clientArgs.UpdateStringArg("serverAddress", serverAddress)
+	clientJob := process.Job{
+		Executable:     s.Resources.GetStringProperty("dmgClient"),
+		JArgs:          clientArgs,
+		CmdlineBuilder: clientCmdlineBuilder{},
+	}
+	log.Printf("Start DMG Client")
+	clientJobInfo, err := s.DMGProcessor.Process(clientJob)
+	if err != nil {
+		log.Fatalf("Error starting for the DMG Client: %v", err)
+	}
+	if err = clientJobInfo.WaitForTermination(); err != nil {
+		log.Fatalf("Error waiting for the DMG Client to terminate")
+	}
+	return nil
+}
+
+func (s DMGService) startDMGServer(j process.Job) (process.Info, string, error) {
+	log.Printf("Start DMG Server")
+	jobInfo, err := s.DMGProcessor.Process(j)
+	if err != nil {
+		return jobInfo, "", err
+	}
+	jobOutput, err := jobInfo.JobStdout()
+	if err != nil {
+		return jobInfo, "", err
+	}
+	r := bufio.NewReader(jobOutput)
+	for i := 0; i < maxChecks; i++ {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				// there was no new output since the last read
+				time.Sleep(pauseBetweenChecksInSec * time.Second)
+				continue
+			}
+			// there was some other error than EOF so stop here
+			return jobInfo, "", err
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, serverAddressPrefix) {
+			serverAddress := strings.TrimLeft(line, serverAddressPrefix)
+			log.Printf("Server started on %s:", serverAddress)
+			return jobInfo, serverAddress, nil
+		}
+		time.Sleep(pauseBetweenChecksInSec * time.Second)
+	}
+	return jobInfo, "", fmt.Errorf("Timeout - could not read server's address")
+}
+
+// imageBandSplitter - splits the based on the number of image bands.
+// The number of entries in the pixels list must be equal to the number of entries in the labels list.
+type imageBandSplitter struct {
+}
+
+// SplitJob splits the job into multiple parallelizable jobs
+func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
+	var err error
+	var dmgAttrs Attrs
+
+	if err = dmgAttrs.extractDmgAttrs(&j.JArgs); err != nil {
+		return err
+	}
+	nImages := len(dmgAttrs.sourcePixelsList)
+	if nImages == 0 {
+		newJob, err := s.createJob(&j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels)
+		if err != nil {
+			return err
+		}
+		jch <- *newJob
+		return nil
+	}
+	for i := 0; i < nImages; i++ {
+		newJob, err := s.createJob(&j, 0, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i])
+		if err != nil {
+			return err
+		}
+		jch <- *newJob
+	}
+	return nil
+}
+
+func (s imageBandSplitter) createJob(originalJob *process.Job,
+	jobIndex int,
+	sourcePixels, sourceLabels string) (*process.Job, error) {
+	if sourcePixels == "" {
+		return nil, fmt.Errorf("No source pixels has been defined")
+	}
+	if sourceLabels == "" {
+		return nil, fmt.Errorf("No source labels has been defined")
+	}
+	newJobArgs := originalJob.JArgs
+	newJobArgs.UpdateStringArg("pixels", sourcePixels)
+	newJobArgs.UpdateStringArg("labels", sourceLabels)
+	return &process.Job{
+		Executable:     originalJob.Executable,
+		Name:           fmt.Sprintf("%s_%d", originalJob.Name, jobIndex),
+		JArgs:          newJobArgs,
+		CmdlineBuilder: originalJob.CmdlineBuilder,
+	}, nil
 }

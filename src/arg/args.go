@@ -1,4 +1,4 @@
-package process
+package arg
 
 import (
 	"flag"
@@ -9,16 +9,16 @@ import (
 	"config"
 )
 
-// ValueList - type for a list of values
-type ValueList []string
+// StringList - type for a list of strings
+type StringList []string
 
 // String returns the stringified form of a valuelist
-func (vl *ValueList) String() string {
+func (vl *StringList) String() string {
 	return strings.Join(*vl, ",")
 }
 
 // Set the value list from a string
-func (vl *ValueList) Set(value string) error {
+func (vl *StringList) Set(value string) error {
 	values := strings.Split(value, ",")
 	for _, v := range values {
 		*vl = append(*vl, strings.Trim(v, " "))
@@ -27,7 +27,7 @@ func (vl *ValueList) Set(value string) error {
 }
 
 // Get Value Getter method
-func (vl *ValueList) Get() interface{} {
+func (vl *StringList) Get() interface{} {
 	return []string(*vl)
 }
 
@@ -124,6 +124,20 @@ func (a Args) GetStringArgValue(name string) (string, error) {
 		}
 	}()
 	return v.(string), nil
+}
+
+// GetStringListArgValue return argument's value as a list of strings
+func (a Args) GetStringListArgValue(name string) ([]string, error) {
+	v, err := a.GetArgValue(name)
+	if err != nil {
+		return make([]string, 0), err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("GetStringListArgValue error: %v", r)
+		}
+	}()
+	return v.([]string), nil
 }
 
 // UpdateIntArg set the int value for the named argument

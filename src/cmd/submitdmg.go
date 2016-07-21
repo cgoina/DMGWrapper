@@ -1,16 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"flag"
-	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
-	"time"
 
+	"arg"
 	"config"
 	"dmg"
 	"drmaautils"
@@ -26,12 +22,6 @@ var (
 	helpFlag         bool
 )
 
-const (
-	pauseBetweenChecksInSec = 10
-	maxChecks               = 100
-	serverAddressPrefix     = "Server Address: "
-)
-
 func main() {
 	var (
 		err error
@@ -40,7 +30,7 @@ func main() {
 	dmgAttrs := &dmg.Attrs{}
 
 	cmdFlags := registerArgs()
-	cmdArgs := process.NewArgs(dmgAttrs)
+	cmdArgs := arg.NewArgs(dmgAttrs)
 
 	if len(os.Args) == 1 {
 		printDefaults(cmdFlags, cmdArgs.Flags)
@@ -92,7 +82,13 @@ func main() {
 			log.Fatalf("Error instantiating the DMG Server")
 		}
 	}
-	startDMG(dmgProcessor, cmdArgs, resources)
+	dmgService := dmg.DMGService{
+		DMGProcessor: dmgProcessor,
+		Resources: *resources,
+	}
+	if err = dmgService.ProcessDMG(cmdArgs); err != nil {
+		log.Fatalf("Error during DMG processing: %v", err)
+	}
 }
 
 // parseArgs parses the command line arguments up to the first unknown one.
@@ -125,71 +121,4 @@ func printDefaults(fs ...*flag.FlagSet) {
 		f.SetOutput(nil)
 		f.PrintDefaults()
 	}
-}
-
-func startDMG(dmgProcessor process.Processor, args *process.Args, resources *config.Config) {
-	serverArgs := *args
-	serverJob := process.Job{
-		Executable:     resources.GetStringProperty("dmgServer"),
-		JArgs:          serverArgs,
-		CmdlineBuilder: dmg.ServerCmdlineBuilder{},
-	}
-	serverJobInfo, serverAddress, err := startDMGServer(dmgProcessor, serverJob)
-	if err != nil {
-		log.Fatalf("Error waiting for the DMG Server to start: %v", err)
-	}
-	go func() {
-		if err = serverJobInfo.WaitForTermination(); err != nil {
-			log.Fatalf("Error waiting for the DMG Server to terminate")
-		}
-	}()
-
-	clientArgs := *args
-	clientArgs.UpdateStringArg("serverAddress", serverAddress)
-	clientJob := process.Job{
-		Executable:     resources.GetStringProperty("dmgClient"),
-		JArgs:          clientArgs,
-		CmdlineBuilder: dmg.ClientCmdlineBuilder{},
-	}
-	log.Printf("Start DMG Client")
-	clientJobInfo, err := dmgProcessor.Process(clientJob)
-	if err != nil {
-		log.Fatalf("Error starting for the DMG Client: %v", err)
-	}
-	if err = clientJobInfo.WaitForTermination(); err != nil {
-		log.Fatalf("Error waiting for the DMG Client to terminate")
-	}
-}
-
-func startDMGServer(sp process.Processor, j process.Job) (process.Info, string, error) {
-	log.Printf("Start DMG Server")
-	jobInfo, err := sp.Process(j)
-	if err != nil {
-		return jobInfo, "", err
-	}
-	jobOutput, err := jobInfo.JobStdout()
-	if err != nil {
-		return jobInfo, "", err
-	}
-	r := bufio.NewReader(jobOutput)
-	for i := 0; i < maxChecks; i++ {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				// there was no new output since the last read
-				time.Sleep(pauseBetweenChecksInSec * time.Second)
-				continue
-			}
-			// there was some other error than EOF so stop here
-			return jobInfo, "", err
-		}
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, serverAddressPrefix) {
-			serverAddress := strings.TrimLeft(line, serverAddressPrefix)
-			log.Printf("Server started on %s:", serverAddress)
-			return jobInfo, serverAddress, nil
-		}
-		time.Sleep(pauseBetweenChecksInSec * time.Second)
-	}
-	return jobInfo, "", fmt.Errorf("Timeout - could not read server's address")
 }

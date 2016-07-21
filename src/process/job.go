@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"arg"
 	"config"
 )
 
@@ -15,9 +16,9 @@ type Job struct {
 	// Name job name
 	Name string
 	// JArgs job arguments
-	JArgs Args
+	JArgs arg.Args
 	// CmdlineBuilder command line builder
-	CmdlineBuilder CmdlineArgBuilder
+	CmdlineBuilder arg.CmdlineArgBuilder
 }
 
 // Info descriptor
@@ -43,7 +44,7 @@ type ParallelProcessor struct {
 
 // Splitter object which know how to split a job for the parallel processor
 type Splitter interface {
-	SplitJob(j Job, jch chan<- Job)
+	SplitJob(j Job, jch chan<- Job) error
 }
 
 // NewParallelProcessor creates a new job processor that will process the job by
