@@ -134,7 +134,7 @@ func (p *GridProcessor) Process(j process.Job) (process.Info, error) {
 
 	// Submit the Job
 	jt.SetExtension("uge_jt_pe", p.resources.GetStringProperty("ugeParallelEnvironment"))
-	log.Printf("Submit (%d-%d) %s %s %v\n ", jt.MinSlots, jt.MaxSlots, j.Name, j.Action, jt.Args)
+	log.Printf("Submit (%d-%d) %s %s %v\n ", jt.MinSlots, jt.MaxSlots, j.Name, j.Executable, jt.Args)
 	if jobInfo, err = p.js.RunJob(jt); err != nil {
 		return nil, err
 	}

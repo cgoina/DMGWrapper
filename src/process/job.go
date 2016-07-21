@@ -8,15 +8,10 @@ import (
 	"config"
 )
 
-// ActionType defines the action to be performed
-type ActionType string
-
 // Job - mipmaps job
 type Job struct {
 	// Executable is the job's executable program
 	Executable string
-	// Action defines the job's action
-	Action ActionType
 	// Name job name
 	Name string
 	// JArgs job arguments

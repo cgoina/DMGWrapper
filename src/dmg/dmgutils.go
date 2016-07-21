@@ -66,7 +66,7 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.StringVar(&a.sourceImgPixels, "pixels", "", "Source pixels image")
 	fs.StringVar(&a.sourceImgLabels, "labels", "", "Source labels")
 	fs.StringVar(&a.destImg, "out", "", "Destination image")
-	fs.StringVar(&a.scratchDir, "scratchdir", "/var/tmp", "Scratch directory")
+	fs.StringVar(&a.scratchDir, "temp", "/var/tmp", "Scratch directory")
 }
 
 // IsHelpFlagSet method
@@ -132,7 +132,7 @@ func (a *Attrs) extractDmgAttrs(ja process.Args) (err error) {
 	if a.destImg, err = ja.GetStringArgValue("out"); err != nil {
 		return err
 	}
-	if a.scratchDir, err = ja.GetStringArgValue("scratchdir"); err != nil {
+	if a.scratchDir, err = ja.GetStringArgValue("temp"); err != nil {
 		return err
 	}
 	return nil

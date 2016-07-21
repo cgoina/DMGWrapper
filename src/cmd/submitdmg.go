@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -37,8 +38,14 @@ func main() {
 	)
 
 	dmgAttrs := &dmg.Attrs{}
+
 	cmdFlags := registerArgs()
 	cmdArgs := process.NewArgs(dmgAttrs)
+
+	if len(os.Args) == 1 {
+		printDefaults(cmdFlags, cmdArgs.Flags)
+		os.Exit(2)
+	}
 
 	parseArgs(cmdFlags)
 	if helpFlag {
@@ -47,17 +54,12 @@ func main() {
 	}
 
 	leftArgs := cmdFlags.NArg()
-	if leftArgs < 1 {
-		log.Println("Action is required")
-		printDefaults(cmdFlags, cmdArgs.Flags)
-		os.Exit(1)
+	firstJobArgIndex := len(os.Args) - leftArgs - 1
+	if firstJobArgIndex < 1 {
+		firstJobArgIndex = 1
 	}
-
-	var jobAction process.ActionType
-	jobAction = process.ActionType(os.Args[len(os.Args)-leftArgs])
-
 	// parse the rest of the command line arguments
-	cmdArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
+	cmdArgs.Flags.Parse(os.Args[firstJobArgIndex:])
 
 	if dmgAttrs.IsHelpFlagSet() {
 		printDefaults(cmdFlags, cmdArgs.Flags)
@@ -90,11 +92,46 @@ func main() {
 			log.Fatalf("Error instantiating the DMG Server")
 		}
 	}
+	startDMG(dmgProcessor, cmdArgs, resources)
+}
 
+// parseArgs parses the command line arguments up to the first unknown one.
+// The method recovers from the panic and allow the other command to continue parsing the rest of
+// the arguments from where it left off.
+func parseArgs(fs *flag.FlagSet) error {
+	defer func() {
+		recover()
+	}()
+
+	return fs.Parse(os.Args[1:])
+}
+
+// registerArgs registers command specific arguments.
+func registerArgs() (fs *flag.FlagSet) {
+	fs = flag.NewFlagSet("submitJobs", flag.ContinueOnError)
+	fs.SetOutput(ioutil.Discard)
+
+	fs.StringVar(&sessionName, "session_name", "mipmaps", "Grid job session name")
+	fs.StringVar(&jobName, "job_name", "mipmaps", "Job name")
+	fs.StringVar(&accountingID, "A", "", "Grid account id")
+	fs.BoolVar(&destroySession, "destroy_session", false, "If true it destroyes the session when it's done if no errors have been encountered")
+	fs.StringVar(&jobProcessorType, "job_processor", "drmaa1", "Job processor type {local, drmaa1, drmaa2}")
+	fs.BoolVar(&helpFlag, "h", false, "Display command line usage flags")
+	return fs
+}
+
+func printDefaults(fs ...*flag.FlagSet) {
+	for _, f := range fs {
+		f.SetOutput(nil)
+		f.PrintDefaults()
+	}
+}
+
+func startDMG(dmgProcessor process.Processor, args *process.Args, resources *config.Config) {
+	serverArgs := *args
 	serverJob := process.Job{
 		Executable:     resources.GetStringProperty("dmgServer"),
-		Action:         jobAction,
-		JArgs:          *cmdArgs,
+		JArgs:          serverArgs,
 		CmdlineBuilder: dmg.ServerCmdlineBuilder{},
 	}
 	serverJobInfo, serverAddress, err := startDMGServer(dmgProcessor, serverJob)
@@ -107,13 +144,14 @@ func main() {
 		}
 	}()
 
-	clientArgs := *cmdArgs
+	clientArgs := *args
 	clientArgs.UpdateStringArg("serverAddress", serverAddress)
 	clientJob := process.Job{
 		Executable:     resources.GetStringProperty("dmgClient"),
 		JArgs:          clientArgs,
 		CmdlineBuilder: dmg.ClientCmdlineBuilder{},
 	}
+	log.Printf("Start DMG Client")
 	clientJobInfo, err := dmgProcessor.Process(clientJob)
 	if err != nil {
 		log.Fatalf("Error starting for the DMG Client: %v", err)
@@ -123,37 +161,8 @@ func main() {
 	}
 }
 
-// parseArgs parses the command line arguments up to the first unknown one.
-// The method recovers from the panic and allow the other command to continue parsing the rest of
-// the arguments from where it left off.
-func parseArgs(fs *flag.FlagSet) {
-	defer func() {
-		recover()
-	}()
-
-	fs.Parse(os.Args[1:])
-}
-
-// registerArgs registers command specific arguments.
-func registerArgs() (fs *flag.FlagSet) {
-	fs = flag.NewFlagSet("submitJobs", flag.PanicOnError)
-
-	fs.StringVar(&sessionName, "session_name", "mipmaps", "Grid job session name")
-	fs.StringVar(&jobName, "job_name", "mipmaps", "Job name")
-	fs.StringVar(&accountingID, "A", "", "Grid account id")
-	fs.BoolVar(&destroySession, "destroy_session", false, "If true it destroyes the session when it's done if no errors have been encountered")
-	fs.StringVar(&jobProcessorType, "job_processor", "drmaa1", "Job processor type {local, drmaa1, drmaa2, print}")
-	fs.BoolVar(&helpFlag, "h", false, "Display command line usage flags")
-	return fs
-}
-
-func printDefaults(fs ...*flag.FlagSet) {
-	for _, f := range fs {
-		f.PrintDefaults()
-	}
-}
-
 func startDMGServer(sp process.Processor, j process.Job) (process.Info, string, error) {
+	log.Printf("Start DMG Server")
 	jobInfo, err := sp.Process(j)
 	if err != nil {
 		return jobInfo, "", err
@@ -177,7 +186,7 @@ func startDMGServer(sp process.Processor, j process.Job) (process.Info, string, 
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, serverAddressPrefix) {
 			serverAddress := strings.TrimLeft(line, serverAddressPrefix)
-			fmt.Printf("!!!!! SERVER ADDRESS IS:%s!!!!\n", serverAddress)
+			log.Printf("Server started on %s:", serverAddress)
 			return jobInfo, serverAddress, nil
 		}
 		time.Sleep(pauseBetweenChecksInSec * time.Second)
