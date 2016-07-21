@@ -126,13 +126,24 @@ func (a Args) GetStringArgValue(name string) (string, error) {
 	return v.(string), nil
 }
 
-// UpdateIntArg
+// UpdateIntArg set the int value for the named argument
 func (a *Args) UpdateIntArg(name string, value int) {
 	f := a.changedArgs.Lookup(name)
 	if f != nil {
 		f.Value.Set(strconv.FormatInt(int64(value), 10))
 	} else {
 		valRef := a.changedArgs.Int(name, value, "")
+		*valRef = value
+	}
+}
+
+// UpdateStringArg set the string value for the named argument
+func (a *Args) UpdateStringArg(name string, value string) {
+	f := a.changedArgs.Lookup(name)
+	if f != nil {
+		f.Value.Set(value)
+	} else {
+		valRef := a.changedArgs.String(name, value, "")
 		*valRef = value
 	}
 }

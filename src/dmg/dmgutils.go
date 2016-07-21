@@ -157,13 +157,13 @@ func (lci *localCmdInfo) WaitForTermination() error {
 	return lci.cmd.Wait()
 }
 
-// LocalDmgServer - in charge with starting a DMG Server process
-type LocalDmgServer struct {
+// LocalDmgProcessor - in charge with starting a DMG Server process
+type LocalDmgProcessor struct {
 	Resources config.Config
 }
 
 // Process launches the server
-func (ls LocalDmgServer) Process(j job.Job) (job.Info, error) {
+func (ls LocalDmgProcessor) Process(j job.Job) (job.Info, error) {
 	return processJob(j)
 }
 
@@ -203,16 +203,6 @@ func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
 		cmdargs = job.AddArgs(cmdargs, "--deramp")
 	}
 	return cmdargs, nil
-}
-
-// LocalDmgClient - in charge with starting a DMG Client process
-type LocalDmgClient struct {
-	Resources config.Config
-}
-
-// Process launches the client
-func (ls LocalDmgClient) Process(j job.Job) (job.Info, error) {
-	return processJob(j)
 }
 
 // ClientCmdlineBuilder - DMG client command line builder

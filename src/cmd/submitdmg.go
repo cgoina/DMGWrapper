@@ -69,20 +69,57 @@ func main() {
 		log.Fatalf("Error reading the config file(s) %v: %v", dmgAttrs.Configs, err)
 	}
 
-	job := job.Job{
+	var dmgProcessor job.Processor
+	switch jobProcessorType {
+	case "local":
+		dmgProcessor = &dmg.LocalDmgProcessor{*resources}
+	case "drmaa1":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV1Proxy(),
+			*resources)
+		if err != nil {
+			log.Fatalf("Error instantiating the DMG Server")
+		}
+	case "drmaa2":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV2Proxy(),
+			*resources)
+		if err != nil {
+			log.Fatalf("Error instantiating the DMG Server")
+		}
+	}
+
+	serverJob := job.Job{
 		Executable:     resources.GetStringProperty("dmgServer"),
 		Action:         jobAction,
 		JArgs:          *cmdArgs,
 		CmdlineBuilder: dmg.ServerCmdlineBuilder{},
 	}
-	dmgs := createDMGServer(*resources)
-	jobInfo, serverAddress, err := startDMGServer(dmgs, job)
+	serverJobInfo, serverAddress, err := startDMGServer(dmgProcessor, serverJob)
 	if err != nil {
 		log.Fatalf("Error waiting for the DMG Server to start: %v", err)
 	}
-	log.Printf("Found Server Address: %s", serverAddress)
-	if err = jobInfo.WaitForTermination(); err != nil {
-		log.Fatalf("Error waiting for the DMG Server to terminate")
+	go func() {
+		if err = serverJobInfo.WaitForTermination(); err != nil {
+			log.Fatalf("Error waiting for the DMG Server to terminate")
+		}
+	}()
+
+	clientArgs := *cmdArgs
+	clientArgs.UpdateStringArg("serverAddress", serverAddress)
+	clientJob := job.Job{
+		Executable:     resources.GetStringProperty("dmgClient"),
+		JArgs:          clientArgs,
+		CmdlineBuilder: dmg.ClientCmdlineBuilder{},
+	}
+	clientJobInfo, err := dmgProcessor.Process(clientJob)
+	if err != nil {
+		log.Fatalf("Error starting for the DMG Client: %v", err)
+	}
+	if err = clientJobInfo.WaitForTermination(); err != nil {
+		log.Fatalf("Error waiting for the DMG Client to terminate")
 	}
 }
 
@@ -114,14 +151,6 @@ func printDefaults(fs ...*flag.FlagSet) {
 	for _, f := range fs {
 		f.PrintDefaults()
 	}
-}
-
-func createDMGServer(resources config.Config) job.Processor {
-	dmgs, err := drmaautils.NewGridProcessor(sessionName, accountingID, drmaautils.NewDRMAAV1Proxy(), resources)
-	if err != nil {
-		log.Fatalf("Error instantiating the DMG Server")
-	}
-	return dmgs
 }
 
 func startDMGServer(sp job.Processor, j job.Job) (job.Info, string, error) {
