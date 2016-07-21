@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"config"
-	"job"
+	"process"
 )
 
 const defaultJobTimeout = 10800
@@ -94,7 +94,7 @@ func (gji GridJobInfo) WaitForTermination() (err error) {
 }
 
 // Process submits a single job to the grid
-func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
+func (p *GridProcessor) Process(j process.Job) (process.Info, error) {
 	var (
 		jt       JobTemplate
 		jobInfo  *JobInfo
@@ -149,7 +149,7 @@ func (p *GridProcessor) Process(j job.Job) (job.Info, error) {
 	return gji, err
 }
 
-func waitForState(job *JobInfo, js DRMAASession, desiredState JobState, waitTimeoutInSec int64) (bool, error) {
+func waitForState(ji *JobInfo, js DRMAASession, desiredState JobState, waitTimeoutInSec int64) (bool, error) {
 	quit := make(chan struct{})
 	if waitTimeoutInSec > 0 {
 		to := time.Duration(waitTimeoutInSec * int64(time.Second))
@@ -162,9 +162,9 @@ func waitForState(job *JobInfo, js DRMAASession, desiredState JobState, waitTime
 	for {
 		select {
 		case <-time.After(pollingInterval):
-			jobStatus, err := checkJobState(job, js)
+			jobStatus, err := checkJobState(ji, js)
 			if err != nil {
-				return false, fmt.Errorf("Error getting job %s status %v", job.ID, err)
+				return false, fmt.Errorf("Error getting job %s status %v", ji.ID, err)
 			}
 			if desiredState != Unset && desiredState == jobStatus {
 				return true, nil
@@ -173,19 +173,19 @@ func waitForState(job *JobInfo, js DRMAASession, desiredState JobState, waitTime
 			case Done:
 				return false, nil
 			case Failed:
-				return false, fmt.Errorf("Job %s failed", job.ID)
+				return false, fmt.Errorf("Job %s failed", ji.ID)
 			}
 		case <-quit:
-			return false, fmt.Errorf("Job %s timeout", job.ID)
+			return false, fmt.Errorf("Job %s timeout", ji.ID)
 		}
 	}
 }
 
-func checkJobState(job *JobInfo, js DRMAASession) (JobState, error) {
-	if err := js.UpdateJobInfo(job); err != nil {
+func checkJobState(ji *JobInfo, js DRMAASession) (JobState, error) {
+	if err := js.UpdateJobInfo(ji); err != nil {
 		return Undetermined, err
 	}
-	return job.State, nil
+	return ji.State, nil
 }
 
 // CloseSession close the processing session

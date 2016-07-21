@@ -13,7 +13,7 @@ import (
 	"config"
 	"dmg"
 	"drmaautils"
-	"job"
+	"process"
 )
 
 var (
@@ -38,7 +38,7 @@ func main() {
 
 	dmgAttrs := &dmg.Attrs{}
 	cmdFlags := registerArgs()
-	cmdArgs := job.NewArgs(dmgAttrs)
+	cmdArgs := process.NewArgs(dmgAttrs)
 
 	parseArgs(cmdFlags)
 	if helpFlag {
@@ -53,8 +53,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	var jobAction job.ActionType
-	jobAction = job.ActionType(os.Args[len(os.Args)-leftArgs])
+	var jobAction process.ActionType
+	jobAction = process.ActionType(os.Args[len(os.Args)-leftArgs])
 
 	// parse the rest of the command line arguments
 	cmdArgs.Flags.Parse(os.Args[len(os.Args)-leftArgs+1:])
@@ -69,7 +69,7 @@ func main() {
 		log.Fatalf("Error reading the config file(s) %v: %v", dmgAttrs.Configs, err)
 	}
 
-	var dmgProcessor job.Processor
+	var dmgProcessor process.Processor
 	switch jobProcessorType {
 	case "local":
 		dmgProcessor = &dmg.LocalDmgProcessor{*resources}
@@ -91,7 +91,7 @@ func main() {
 		}
 	}
 
-	serverJob := job.Job{
+	serverJob := process.Job{
 		Executable:     resources.GetStringProperty("dmgServer"),
 		Action:         jobAction,
 		JArgs:          *cmdArgs,
@@ -109,7 +109,7 @@ func main() {
 
 	clientArgs := *cmdArgs
 	clientArgs.UpdateStringArg("serverAddress", serverAddress)
-	clientJob := job.Job{
+	clientJob := process.Job{
 		Executable:     resources.GetStringProperty("dmgClient"),
 		JArgs:          clientArgs,
 		CmdlineBuilder: dmg.ClientCmdlineBuilder{},
@@ -153,7 +153,7 @@ func printDefaults(fs ...*flag.FlagSet) {
 	}
 }
 
-func startDMGServer(sp job.Processor, j job.Job) (job.Info, string, error) {
+func startDMGServer(sp process.Processor, j process.Job) (process.Info, string, error) {
 	jobInfo, err := sp.Process(j)
 	if err != nil {
 		return jobInfo, "", err

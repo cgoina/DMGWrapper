@@ -9,12 +9,12 @@ import (
 	"strconv"
 
 	"config"
-	"job"
+	"process"
 )
 
 // Attrs registers DMG client and server attributes
 type Attrs struct {
-	Configs         job.ValueList
+	Configs         process.ValueList
 	helpFlag        bool
 	serverAddress   string
 	serverPort      int
@@ -74,7 +74,7 @@ func (a *Attrs) IsHelpFlagSet() bool {
 	return a.helpFlag
 }
 
-func (a *Attrs) extractDmgAttrs(ja job.Args) (err error) {
+func (a *Attrs) extractDmgAttrs(ja process.Args) (err error) {
 	if a.serverAddress, err = ja.GetStringArgValue("serverAddress"); err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ type LocalDmgProcessor struct {
 }
 
 // Process launches the server
-func (ls LocalDmgProcessor) Process(j job.Job) (job.Info, error) {
+func (ls LocalDmgProcessor) Process(j process.Job) (process.Info, error) {
 	return processJob(j)
 }
 
@@ -172,7 +172,7 @@ type ServerCmdlineBuilder struct {
 }
 
 // GetCmdlineArgs server command line builder method
-func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
+func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a process.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var dmgAttrs Attrs
@@ -181,26 +181,26 @@ func (sclb ServerCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
 		return cmdargs, err
 	}
 	if dmgAttrs.serverPort > 0 {
-		cmdargs = job.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
+		cmdargs = process.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
-	cmdargs = job.AddArgs(cmdargs, "--count", strconv.FormatInt(int64(dmgAttrs.nSections), 10))
-	cmdargs = job.AddArgs(cmdargs, "--iters", strconv.FormatInt(int64(dmgAttrs.iterations), 10))
-	cmdargs = job.AddArgs(cmdargs, "--vCycles", strconv.FormatInt(int64(dmgAttrs.vCycles), 10))
-	cmdargs = job.AddArgs(cmdargs, "--iWeight", strconv.FormatFloat(dmgAttrs.iWeight, 'g', -1, 64))
-	cmdargs = job.AddArgs(cmdargs, "--gWeight", strconv.FormatFloat(dmgAttrs.gWeight, 'g', -1, 64))
-	cmdargs = job.AddArgs(cmdargs, "--gScale", strconv.FormatFloat(dmgAttrs.gScale, 'g', -1, 64))
-	cmdargs = job.AddArgs(cmdargs, "--tileExt", dmgAttrs.tileExt)
-	cmdargs = job.AddArgs(cmdargs, "--tileWidth", strconv.FormatInt(int64(dmgAttrs.tileWidth), 10))
-	cmdargs = job.AddArgs(cmdargs, "--tileHeight", strconv.FormatInt(int64(dmgAttrs.tileHeight), 10))
+	cmdargs = process.AddArgs(cmdargs, "--count", strconv.FormatInt(int64(dmgAttrs.nSections), 10))
+	cmdargs = process.AddArgs(cmdargs, "--iters", strconv.FormatInt(int64(dmgAttrs.iterations), 10))
+	cmdargs = process.AddArgs(cmdargs, "--vCycles", strconv.FormatInt(int64(dmgAttrs.vCycles), 10))
+	cmdargs = process.AddArgs(cmdargs, "--iWeight", strconv.FormatFloat(dmgAttrs.iWeight, 'g', -1, 64))
+	cmdargs = process.AddArgs(cmdargs, "--gWeight", strconv.FormatFloat(dmgAttrs.gWeight, 'g', -1, 64))
+	cmdargs = process.AddArgs(cmdargs, "--gScale", strconv.FormatFloat(dmgAttrs.gScale, 'g', -1, 64))
+	cmdargs = process.AddArgs(cmdargs, "--tileExt", dmgAttrs.tileExt)
+	cmdargs = process.AddArgs(cmdargs, "--tileWidth", strconv.FormatInt(int64(dmgAttrs.tileWidth), 10))
+	cmdargs = process.AddArgs(cmdargs, "--tileHeight", strconv.FormatInt(int64(dmgAttrs.tileHeight), 10))
 
 	if dmgAttrs.verbose {
-		cmdargs = job.AddArgs(cmdargs, "--verbose")
+		cmdargs = process.AddArgs(cmdargs, "--verbose")
 	}
 	if dmgAttrs.gray {
-		cmdargs = job.AddArgs(cmdargs, "--gray")
+		cmdargs = process.AddArgs(cmdargs, "--gray")
 	}
 	if dmgAttrs.deramp {
-		cmdargs = job.AddArgs(cmdargs, "--deramp")
+		cmdargs = process.AddArgs(cmdargs, "--deramp")
 	}
 	return cmdargs, nil
 }
@@ -210,7 +210,7 @@ type ClientCmdlineBuilder struct {
 }
 
 // GetCmdlineArgs client command line builder method
-func (sclb ClientCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
+func (sclb ClientCmdlineBuilder) GetCmdlineArgs(a process.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var dmgAttrs Attrs
@@ -219,26 +219,26 @@ func (sclb ClientCmdlineBuilder) GetCmdlineArgs(a job.Args) ([]string, error) {
 		return cmdargs, err
 	}
 	if dmgAttrs.serverPort > 0 {
-		cmdargs = job.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
+		cmdargs = process.AddArgs(cmdargs, "--port", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
 	if dmgAttrs.serverAddress != "" {
-		cmdargs = job.AddArgs(cmdargs, "--address", dmgAttrs.serverAddress)
+		cmdargs = process.AddArgs(cmdargs, "--address", dmgAttrs.serverAddress)
 	}
 	if dmgAttrs.clientIndex > 0 {
-		cmdargs = job.AddArgs(cmdargs, "--index", strconv.FormatInt(int64(dmgAttrs.clientIndex), 10))
+		cmdargs = process.AddArgs(cmdargs, "--index", strconv.FormatInt(int64(dmgAttrs.clientIndex), 10))
 	}
 	if dmgAttrs.nThreads > 1 {
-		cmdargs = job.AddArgs(cmdargs, "--threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10))
+		cmdargs = process.AddArgs(cmdargs, "--threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10))
 	}
-	cmdargs = job.AddArgs(cmdargs, "--pixels", dmgAttrs.sourceImgPixels)
-	cmdargs = job.AddArgs(cmdargs, "--labels", dmgAttrs.sourceImgLabels)
-	cmdargs = job.AddArgs(cmdargs, "--out", dmgAttrs.destImg)
-	cmdargs = job.AddArgs(cmdargs, "--temp", dmgAttrs.scratchDir)
+	cmdargs = process.AddArgs(cmdargs, "--pixels", dmgAttrs.sourceImgPixels)
+	cmdargs = process.AddArgs(cmdargs, "--labels", dmgAttrs.sourceImgLabels)
+	cmdargs = process.AddArgs(cmdargs, "--out", dmgAttrs.destImg)
+	cmdargs = process.AddArgs(cmdargs, "--temp", dmgAttrs.scratchDir)
 	// !!!!! TODO
 	return cmdargs, nil
 }
 
-func processJob(j job.Job) (job.Info, error) {
+func processJob(j process.Job) (process.Info, error) {
 	cmdargs, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
 	if err != nil {
 		return nil, fmt.Errorf("Error preparing the command line arguments: %v", err)
