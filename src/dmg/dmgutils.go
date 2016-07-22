@@ -380,6 +380,13 @@ func (s Service) startDMGServer(j process.Job) (process.Info, string, error) {
 	if err != nil {
 		return jobInfo, "", err
 	}
+	serverAddress, err := j.JArgs.GetStringArgValue("serverAddress")
+	if err != nil {
+		log.Printf("Error getting the serverAddress: %v", err)
+	}
+	if serverAddress != "" {
+		return jobInfo, serverAddress, nil
+	}
 	r := bufio.NewReader(jobOutput)
 	for i := 0; i < maxChecks; i++ {
 		line, err := r.ReadString('\n')

@@ -63,6 +63,8 @@ func main() {
 
 	var dmgProcessor process.Processor
 	switch jobProcessorType {
+	case "echo":
+		dmgProcessor = process.NewEchoProcessor()
 	case "local":
 		dmgProcessor = &dmg.LocalDmgProcessor{*resources}
 	case "drmaa1":

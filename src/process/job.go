@@ -2,6 +2,7 @@ package process
 
 import (
 	"io"
+	"fmt"
 	"log"
 	"os"
 
@@ -33,9 +34,48 @@ type Processor interface {
 	Process(j Job) (Info, error)
 }
 
-// ParallelProcessor is responsible with splitting a job into multiple smaller jobs
+// echoJobInfo echo job info
+type echoJobInfo struct {
+}
+
+// JobStdout an echo job's standard output
+func (ej echoJobInfo) JobStdout() (io.ReadCloser, error) {
+	return os.Stdout, nil
+}
+
+// JobStderr an echo job's standard error
+func (ej echoJobInfo) JobStderr() (io.ReadCloser, error) {
+	return os.Stderr, nil
+}
+
+// WaitForTermination wait for job's completion
+func (ej echoJobInfo) WaitForTermination() error {
+	return nil
+}
+
+// echoProcessor is a processor that simply outputs the command line
+type echoProcessor struct {
+}
+
+// NewEchoProcessor creates a job processor that prints out the cmd line
+func NewEchoProcessor() Processor {
+	return &echoProcessor{}
+}
+
+// Process the given job
+func (p *echoProcessor) Process(j Job) (Info, error) {
+	cmdline, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("Execute %v %v\n", j.Name, cmdline)
+
+	return echoJobInfo{}, nil
+}
+
+// parallelProcessor is responsible with splitting a job into multiple smaller jobs
 // and processing them in parallel
-type ParallelProcessor struct {
+type parallelProcessor struct {
 	resources    config.Config
 	jobProcessor Processor
 	nextJobIndex uint64
@@ -50,7 +90,7 @@ type Splitter interface {
 // NewParallelProcessor creates a new job processor that will process the job by
 // first splitting it into multiple smaller jobs and than apply the given subJob processor.
 func NewParallelProcessor(jobProcessor Processor, jobSplitter Splitter, resources config.Config) Processor {
-	return &ParallelProcessor{
+	return &parallelProcessor{
 		resources:    resources,
 		jobProcessor: jobProcessor,
 		nextJobIndex: 1,
@@ -58,36 +98,36 @@ func NewParallelProcessor(jobProcessor Processor, jobSplitter Splitter, resource
 	}
 }
 
-// ParallelJob information about a parallel job
-type ParallelJob struct {
+// parallelJob information about a parallel job
+type parallelJob struct {
 	done chan struct{}
 }
 
 // JobStdout a parallel job's standard output
-func (pj ParallelJob) JobStdout() (io.ReadCloser, error) {
+func (pj parallelJob) JobStdout() (io.ReadCloser, error) {
 	return os.Stdout, nil
 }
 
 // JobStderr a parallel job's standard error
-func (pj ParallelJob) JobStderr() (io.ReadCloser, error) {
+func (pj parallelJob) JobStderr() (io.ReadCloser, error) {
 	return os.Stderr, nil
 }
 
 // WaitForTermination wait for job's completion
-func (pj ParallelJob) WaitForTermination() error {
+func (pj parallelJob) WaitForTermination() error {
 	<-pj.done
 	return nil
 }
 
 // Process the given job
-func (p *ParallelProcessor) Process(j Job) (Info, error) {
+func (p *parallelProcessor) Process(j Job) (Info, error) {
 	maxRunningJobs := p.resources.GetIntProperty("maxRunningJobs")
 	if maxRunningJobs <= 0 {
 		maxRunningJobs = 1
 	}
 	workerPool := make(chan *processWorker, maxRunningJobs)
 
-	jobInfo := ParallelJob{
+	jobInfo := parallelJob{
 		done: make(chan struct{}, 1),
 	}
 
@@ -149,7 +189,7 @@ func startWorker(errc chan error, quit chan struct{}, pool chan *processWorker, 
 }
 
 // splitJob splits the job into multiple smaller jobs
-func (p *ParallelProcessor) splitJob(j Job) chan Job {
+func (p *parallelProcessor) splitJob(j Job) chan Job {
 	jobQueueSize := p.resources.GetIntProperty("jobQueueSize")
 	jch := make(chan Job, jobQueueSize)
 	go func() {

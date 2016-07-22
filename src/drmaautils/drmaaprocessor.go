@@ -109,6 +109,9 @@ func (p *GridProcessor) Process(j process.Job) (process.Info, error) {
 	}()
 	jt.RemoteCommand = j.Executable
 	cmdline, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
+	if err != nil {
+		return nil, err
+	}
 	jt.Args = make([]string, len(cmdline), len(cmdline))
 	copy(jt.Args, cmdline)
 	jt.JobName = j.Name
