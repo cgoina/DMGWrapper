@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -64,7 +65,7 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.Float64Var(&a.iWeight, "iWeight", 0, "Value interpolation weight")
 	fs.Float64Var(&a.gWeight, "gWeight", 1, "Gradient interpolation weight")
 	fs.Float64Var(&a.gScale, "gScale", 1, "Gradient scale")
-	fs.StringVar(&a.serverAddress, "serverAddress", "localhost", "DMG server address - host[:port]")
+	fs.StringVar(&a.serverAddress, "serverAddress", "", "DMG server address - host[:port]")
 	fs.IntVar(&a.serverPort, "serverPort", 0, "DMG server port")
 	fs.BoolVar(&a.verbose, "verbose", false, "verbosity flag")
 	fs.BoolVar(&a.gray, "gray", true, "gray image flag")
@@ -208,16 +209,48 @@ func (lci *localCmdInfo) JobStderr() (io.ReadCloser, error) {
 }
 
 func (lci *localCmdInfo) WaitForTermination() error {
-	return lci.cmd.Wait()
+	var donech chan struct{}
+	var done struct{}
+	donech = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-time.After(500 * time.Millisecond):
+				lci.readOutput()
+			case <-donech:
+				lci.readOutput()
+				return
+			}
+		}
+	}()
+	lci.readOutput()
+	err := lci.cmd.Wait()
+	donech <- done
+	return err
+}
+
+func (lci *localCmdInfo) readOutput() {
+	io.Copy(os.Stdout, lci.jobStdout)
+	io.Copy(os.Stderr, lci.jobStderr)
 }
 
 // LocalDmgProcessor - in charge with starting a DMG Server process
 type LocalDmgProcessor struct {
+	process.JobWatcher
 	Resources config.Config
 }
 
-// Process launches the server
-func (ls LocalDmgProcessor) Process(j process.Job) (process.Info, error) {
+// Run the given job
+func (lp LocalDmgProcessor) Run(j process.Job) error {
+	ji, err := lp.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return lp.Wait(ji)
+}
+
+// Start launches the server
+func (lp LocalDmgProcessor) Start(j process.Job) (process.Info, error) {
 	return processJob(j)
 }
 
@@ -315,64 +348,106 @@ func processJob(j process.Job) (process.Info, error) {
 	return lci, err
 }
 
-// Service orchestrates the DMG client and server
-type Service struct {
-	DMGProcessor process.Processor
-	Resources    config.Config
+// imageBandsProcessingInfo job info related to processing
+type imageBandsProcessingInfo struct {
+	serverJobInfo process.Info
+	clientJobInfo process.Info
 }
 
-// ProcessDMG performs distributed gradient processing
-func (s Service) ProcessDMG(args *arg.Args) error {
-	var err error
-	var dmgAttrs Attrs
+// JobStdout job's standard output
+func (pi imageBandsProcessingInfo) JobStdout() (io.ReadCloser, error) {
+	return os.Stdout, nil
+}
 
-	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
-		return err
-	}
-	if err = dmgAttrs.validate(); err != nil {
-		return err
-	}
-	serverArgs := args.Clone()
-	serverJob := process.Job{
-		Executable:     s.Resources.GetStringProperty("dmgServer"),
-		JArgs:          serverArgs,
-		CmdlineBuilder: serverCmdlineBuilder{},
-	}
-	serverJobInfo, serverAddress, err := s.startDMGServer(serverJob)
-	if err != nil {
-		return err
-	}
+// JobStderr job's standard error
+func (pi imageBandsProcessingInfo) JobStderr() (io.ReadCloser, error) {
+	return os.Stderr, nil
+}
+
+// WaitForTermination wait for job's completion
+func (pi imageBandsProcessingInfo) WaitForTermination() error {
 	go func() {
-		if waitErr := serverJobInfo.WaitForTermination(); waitErr != nil {
+		if pi.serverJobInfo == nil {
+			log.Printf("No server job has been started")
+			return
+		}
+		if waitErr := pi.serverJobInfo.WaitForTermination(); waitErr != nil {
 			log.Printf("Error waiting for the DMG Server to terminate: %v", waitErr)
 		}
 	}()
-
-	clientArgs := args.Clone()
-	clientArgs.UpdateStringArg("serverAddress", serverAddress)
-	clientJob := process.Job{
-		Executable:     s.Resources.GetStringProperty("dmgClient"),
-		JArgs:          clientArgs,
-		CmdlineBuilder: clientCmdlineBuilder{},
+	if pi.clientJobInfo == nil {
+		return fmt.Errorf("No client job has been started")
 	}
-	var clientJobSplitter imageBandSplitter
-	clientProcessor := process.NewParallelProcessor(s.DMGProcessor, clientJobSplitter, s.Resources)
-
-	log.Printf("Start DMG Client")
-	clientJobInfo, err := clientProcessor.Process(clientJob)
-	if err != nil {
-		return fmt.Errorf("Error starting for the DMG Client: %v", err)
-	}
-	if err = clientJobInfo.WaitForTermination(); err != nil {
+	if err := pi.clientJobInfo.WaitForTermination(); err != nil {
 		return fmt.Errorf("Error waiting for the DMG Client to terminate")
 	}
 	log.Printf("DMG processing completed")
 	return nil
 }
 
-func (s Service) startDMGServer(j process.Job) (process.Info, string, error) {
+// ImageBandsProcessor orchestrates the DMG client and server for one or multiple images
+type ImageBandsProcessor struct {
+	process.JobWatcher
+	ImageProcessor process.Processor
+	Resources      config.Config
+}
+
+// Run the given job
+func (p ImageBandsProcessor) Run(j process.Job) error {
+	ji, err := p.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return p.Wait(ji)
+}
+
+// Start the distributed gradient processing
+func (p ImageBandsProcessor) Start(j process.Job) (process.Info, error) {
+	var err error
+	var dmgAttrs Attrs
+
+	args := &j.JArgs
+	processInfo := imageBandsProcessingInfo{}
+	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
+		return processInfo, err
+	}
+	if err = dmgAttrs.validate(); err != nil {
+		return processInfo, err
+	}
+	serverArgs := args.Clone()
+	serverJob := process.Job{
+		Executable:     p.Resources.GetStringProperty("dmgServer"),
+		JArgs:          serverArgs,
+		CmdlineBuilder: serverCmdlineBuilder{},
+	}
+	serverJobInfo, serverAddress, err := p.startDMGServer(serverJob)
+	if err != nil {
+		return processInfo, err
+	}
+	processInfo.serverJobInfo = serverJobInfo
+
+	clientArgs := args.Clone()
+	clientArgs.UpdateStringArg("serverAddress", serverAddress)
+	clientJob := process.Job{
+		Executable:     p.Resources.GetStringProperty("dmgClient"),
+		JArgs:          clientArgs,
+		CmdlineBuilder: clientCmdlineBuilder{},
+	}
+	var clientJobSplitter imageBandSplitter
+	clientProcessor := process.NewParallelProcessor(p.ImageProcessor, clientJobSplitter, p.Resources)
+
+	log.Printf("Start DMG Client")
+	clientJobInfo, err := clientProcessor.Start(clientJob)
+	if err != nil {
+		return processInfo, fmt.Errorf("Error starting for the DMG Client: %v", err)
+	}
+	processInfo.clientJobInfo = clientJobInfo
+	return processInfo, nil
+}
+
+func (p ImageBandsProcessor) startDMGServer(j process.Job) (process.Info, string, error) {
 	log.Printf("Start DMG Server")
-	jobInfo, err := s.DMGProcessor.Process(j)
+	jobInfo, err := p.ImageProcessor.Start(j)
 	if err != nil {
 		return jobInfo, "", err
 	}

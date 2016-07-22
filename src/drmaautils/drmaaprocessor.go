@@ -15,29 +15,6 @@ import (
 
 const defaultJobTimeout = 10800
 
-// GridProcessor processor that submits the job to the grid
-type GridProcessor struct {
-	sessionName  string
-	accountingID string
-	resources    config.Config
-	dp           DRMAAProxy
-	js           DRMAASession
-}
-
-// NewGridProcessor creates a grid processor
-func NewGridProcessor(sessionName, accountingID string, drmaaProxy DRMAAProxy, resources config.Config) (p *GridProcessor, err error) {
-	p = &GridProcessor{
-		sessionName:  sessionName,
-		accountingID: accountingID,
-		resources:    resources,
-		dp:           drmaaProxy,
-	}
-	if p.js, err = p.dp.CreateSession(sessionName); err != nil {
-		return p, fmt.Errorf("Cannot create job session '%s'", sessionName)
-	}
-	return p, nil
-}
-
 // GridJobInfo grid job info
 type GridJobInfo struct {
 	js              DRMAASession
@@ -93,8 +70,41 @@ func (gji GridJobInfo) WaitForTermination() (err error) {
 	return err
 }
 
-// Process submits a single job to the grid
-func (p *GridProcessor) Process(j process.Job) (process.Info, error) {
+// GridProcessor processor that submits the job to the grid
+type GridProcessor struct {
+	process.JobWatcher
+	sessionName  string
+	accountingID string
+	resources    config.Config
+	dp           DRMAAProxy
+	js           DRMAASession
+}
+
+// NewGridProcessor creates a grid processor
+func NewGridProcessor(sessionName, accountingID string, drmaaProxy DRMAAProxy, resources config.Config) (p *GridProcessor, err error) {
+	p = &GridProcessor{
+		sessionName:  sessionName,
+		accountingID: accountingID,
+		resources:    resources,
+		dp:           drmaaProxy,
+	}
+	if p.js, err = p.dp.CreateSession(sessionName); err != nil {
+		return p, fmt.Errorf("Cannot create job session '%s'", sessionName)
+	}
+	return p, nil
+}
+
+// Run the given job
+func (p *GridProcessor) Run(j process.Job) error {
+	ji, err := p.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return p.Wait(ji)
+}
+
+// Start submits a single job to the grid
+func (p *GridProcessor) Start(j process.Job) (process.Info, error) {
 	var (
 		jt       JobTemplate
 		jobInfo  *JobInfo

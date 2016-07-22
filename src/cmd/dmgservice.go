@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -18,9 +19,11 @@ var (
 	jobName          string
 	accountingID     string
 	destroySession   bool
-	jobProcessorType string
+	dmgProcessorType string
 	helpFlag         bool
 )
+
+type serviceFunc func() error
 
 func main() {
 	var (
@@ -44,10 +47,14 @@ func main() {
 	}
 
 	leftArgs := cmdFlags.NArg()
-	firstJobArgIndex := len(os.Args) - leftArgs - 1
-	if firstJobArgIndex < 1 {
-		firstJobArgIndex = 1
+	if leftArgs < 1 {
+		log.Println("Missing operation")
+		printDefaults(cmdFlags, cmdArgs.Flags)
+		os.Exit(2)
 	}
+	operation := os.Args[len(os.Args)-leftArgs]
+
+	firstJobArgIndex := len(os.Args) - leftArgs + 1
 	// parse the rest of the command line arguments
 	cmdArgs.Flags.Parse(os.Args[firstJobArgIndex:])
 
@@ -61,35 +68,12 @@ func main() {
 		log.Fatalf("Error reading the config file(s) %v: %v", dmgAttrs.Configs, err)
 	}
 
-	var dmgProcessor process.Processor
-	switch jobProcessorType {
-	case "echo":
-		dmgProcessor = process.NewEchoProcessor()
-	case "local":
-		dmgProcessor = &dmg.LocalDmgProcessor{*resources}
-	case "drmaa1":
-		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
-			accountingID,
-			drmaautils.NewDRMAAV1Proxy(),
-			*resources)
-		if err != nil {
-			log.Fatalf("Error instantiating the DMG Server")
-		}
-	case "drmaa2":
-		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
-			accountingID,
-			drmaautils.NewDRMAAV2Proxy(),
-			*resources)
-		if err != nil {
-			log.Fatalf("Error instantiating the DMG Server")
-		}
+	service, err := createDMGService(operation, dmgProcessorType, cmdArgs, *resources)
+	if err != nil {
+		log.Fatalf("Error creating the DMG service: %v", err)
 	}
-	dmgService := dmg.Service{
-		DMGProcessor: dmgProcessor,
-		Resources:    *resources,
-	}
-	if err = dmgService.ProcessDMG(cmdArgs); err != nil {
-		log.Fatalf("Error during DMG processing: %v", err)
+	if err = service(); err != nil {
+		log.Fatalf("Error running the DMG service: %v", err)
 	}
 }
 
@@ -109,11 +93,11 @@ func registerArgs() (fs *flag.FlagSet) {
 	fs = flag.NewFlagSet("submitJobs", flag.ContinueOnError)
 	fs.SetOutput(ioutil.Discard)
 
-	fs.StringVar(&sessionName, "session_name", "mipmaps", "Grid job session name")
-	fs.StringVar(&jobName, "job_name", "mipmaps", "Job name")
+	fs.StringVar(&sessionName, "sessionName", "mipmaps", "Grid job session name")
+	fs.StringVar(&jobName, "jobName", "mipmaps", "Job name")
 	fs.StringVar(&accountingID, "A", "", "Grid account id")
-	fs.BoolVar(&destroySession, "destroy_session", false, "If true it destroyes the session when it's done if no errors have been encountered")
-	fs.StringVar(&jobProcessorType, "job_processor", "drmaa1", "Job processor type {local, drmaa1, drmaa2}")
+	fs.BoolVar(&destroySession, "destroySession", false, "If true it destroyes the session when it's done if no errors have been encountered")
+	fs.StringVar(&dmgProcessorType, "dmgProcessor", "drmaa1", "Job processor type {local, drmaa1, drmaa2}")
 	fs.BoolVar(&helpFlag, "h", false, "Display command line usage flags")
 	return fs
 }
@@ -122,5 +106,64 @@ func printDefaults(fs ...*flag.FlagSet) {
 	for _, f := range fs {
 		f.SetOutput(nil)
 		f.PrintDefaults()
+	}
+}
+
+func createDMGProcessor(resources config.Config) (process.Processor, error) {
+	var dmgProcessor process.Processor
+	var err error
+	switch dmgProcessorType {
+	case "echo":
+		dmgProcessor = process.NewEchoProcessor()
+	case "local":
+		dmgProcessor = &dmg.LocalDmgProcessor{Resources: resources}
+	case "drmaa1":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV1Proxy(),
+			resources)
+	case "drmaa2":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV2Proxy(),
+			resources)
+	default:
+		err = fmt.Errorf("Invalid DMG processor type: %s", dmgProcessorType)
+	}
+	return dmgProcessor, err
+}
+
+func createDMGService(operation string,
+	dmgProcessorType string,
+	args *arg.Args,
+	resources config.Config) (serviceFunc, error) {
+	var err error
+	dmgProcessor, err := createDMGProcessor(resources)
+	if err != nil {
+		return nil, err
+	}
+
+	bandsProcessor := dmg.ImageBandsProcessor{
+		ImageProcessor: dmgProcessor,
+		Resources:      resources,
+	}
+
+	switch operation {
+	case "dmgImage":
+		return serviceFunc(func() error {
+			j := process.Job{
+				JArgs: args.Clone(),
+			}
+			return bandsProcessor.Run(j)
+		}), nil
+
+	case "dmgSection":
+		return serviceFunc(func() error {
+			// !!!!!!!!!!!!!! TODO
+			return nil
+		}), nil
+	default:
+		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection}",
+			dmgProcessorType)
 	}
 }

@@ -1,8 +1,8 @@
 package process
 
 import (
-	"io"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -31,7 +31,20 @@ type Info interface {
 
 // Processor is responsible with processing a single job
 type Processor interface {
-	Process(j Job) (Info, error)
+	Start(j Job) (Info, error)
+	Run(j Job) error
+}
+
+// JobWatcher - implements a job watcher whose main job is to wait for job's completion
+type JobWatcher struct {
+}
+
+// Wait method
+func (w JobWatcher) Wait(ji Info) error {
+	if err := ji.WaitForTermination(); err != nil {
+		return fmt.Errorf("Processing error: %v", err)
+	}
+	return nil
 }
 
 // echoJobInfo echo job info
@@ -55,6 +68,7 @@ func (ej echoJobInfo) WaitForTermination() error {
 
 // echoProcessor is a processor that simply outputs the command line
 type echoProcessor struct {
+	JobWatcher
 }
 
 // NewEchoProcessor creates a job processor that prints out the cmd line
@@ -62,13 +76,22 @@ func NewEchoProcessor() Processor {
 	return &echoProcessor{}
 }
 
-// Process the given job
-func (p *echoProcessor) Process(j Job) (Info, error) {
+// Run the given job
+func (p *echoProcessor) Run(j Job) error {
+	ji, err := p.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return p.Wait(ji)
+}
+
+// Start the given job
+func (p *echoProcessor) Start(j Job) (Info, error) {
 	cmdline, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Execute %v %v\n", j.Name, cmdline)
+	fmt.Printf("Execute %v %v %v\n", j.Name, j.Executable, cmdline)
 
 	return echoJobInfo{}, nil
 }
@@ -76,6 +99,7 @@ func (p *echoProcessor) Process(j Job) (Info, error) {
 // parallelProcessor is responsible with splitting a job into multiple smaller jobs
 // and processing them in parallel
 type parallelProcessor struct {
+	JobWatcher
 	resources    config.Config
 	jobProcessor Processor
 	nextJobIndex uint64
@@ -119,8 +143,17 @@ func (pj parallelJob) WaitForTermination() error {
 	return nil
 }
 
-// Process the given job
-func (p *parallelProcessor) Process(j Job) (Info, error) {
+// Run the given job
+func (p *parallelProcessor) Run(j Job) error {
+	ji, err := p.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return p.Wait(ji)
+}
+
+// Start the given job
+func (p *parallelProcessor) Start(j Job) (Info, error) {
 	maxRunningJobs := p.resources.GetIntProperty("maxRunningJobs")
 	if maxRunningJobs <= 0 {
 		maxRunningJobs = 1
@@ -218,16 +251,9 @@ func (w *processWorker) run() {
 				w.done <- done
 				return
 			}
-			// process the job
-			log.Printf("Process Job: %v", j)
-			jobInfo, err := w.jp.Process(j)
-
-			if err == nil {
-				if err = jobInfo.WaitForTermination(); err != nil {
-					log.Println(err)
-					w.setError(err)
-				}
-			} else {
+			// run the job
+			log.Printf("Run Job: %v", j)
+			if err := w.jp.Run(j); err != nil {
 				log.Println(err)
 				w.setError(err)
 			}
