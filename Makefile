@@ -20,7 +20,7 @@ build:
 	@go build process
 	@go build drmaautils
 	@go build dmg
-	@go build src/cmd/submitdmg.go
+	@go build src/cmd/dmgservice.go
 
 clean:
-	@rm -f submitdmg
+	@rm -f dmgservice
