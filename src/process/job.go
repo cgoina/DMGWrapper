@@ -31,7 +31,10 @@ type Info interface {
 
 // Processor is responsible with processing a single job
 type Processor interface {
+	// Start the given job and returns as soon as it can without waiting for job's completion.
+	// To check for the completion use Info's WaitForTermination method
 	Start(j Job) (Info, error)
+	// Run starts the given job and wait's until it completes.
 	Run(j Job) error
 }
 
