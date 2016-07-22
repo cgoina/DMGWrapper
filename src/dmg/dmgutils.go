@@ -315,14 +315,14 @@ func processJob(j process.Job) (process.Info, error) {
 	return lci, err
 }
 
-// DMGService orchestrates the DMG client and server
-type DMGService struct {
+// Service orchestrates the DMG client and server
+type Service struct {
 	DMGProcessor process.Processor
 	Resources    config.Config
 }
 
-// ProcessDMG
-func (s DMGService) ProcessDMG(args *arg.Args) error {
+// ProcessDMG performs distributed gradient processing
+func (s Service) ProcessDMG(args *arg.Args) error {
 	var err error
 	var dmgAttrs Attrs
 
@@ -332,7 +332,7 @@ func (s DMGService) ProcessDMG(args *arg.Args) error {
 	if err = dmgAttrs.validate(); err != nil {
 		return err
 	}
-	serverArgs := *args
+	serverArgs := args.Clone()
 	serverJob := process.Job{
 		Executable:     s.Resources.GetStringProperty("dmgServer"),
 		JArgs:          serverArgs,
@@ -348,25 +348,29 @@ func (s DMGService) ProcessDMG(args *arg.Args) error {
 		}
 	}()
 
-	clientArgs := *args
+	clientArgs := args.Clone()
 	clientArgs.UpdateStringArg("serverAddress", serverAddress)
 	clientJob := process.Job{
 		Executable:     s.Resources.GetStringProperty("dmgClient"),
 		JArgs:          clientArgs,
 		CmdlineBuilder: clientCmdlineBuilder{},
 	}
+	var clientJobSplitter imageBandSplitter
+	clientProcessor := process.NewParallelProcessor(s.DMGProcessor, clientJobSplitter, s.Resources)
+
 	log.Printf("Start DMG Client")
-	clientJobInfo, err := s.DMGProcessor.Process(clientJob)
+	clientJobInfo, err := clientProcessor.Process(clientJob)
 	if err != nil {
-		log.Fatalf("Error starting for the DMG Client: %v", err)
+		return fmt.Errorf("Error starting for the DMG Client: %v", err)
 	}
 	if err = clientJobInfo.WaitForTermination(); err != nil {
-		log.Fatalf("Error waiting for the DMG Client to terminate")
+		return fmt.Errorf("Error waiting for the DMG Client to terminate")
 	}
+	log.Printf("DMG processing completed")
 	return nil
 }
 
-func (s DMGService) startDMGServer(j process.Job) (process.Info, string, error) {
+func (s Service) startDMGServer(j process.Job) (process.Info, string, error) {
 	log.Printf("Start DMG Server")
 	jobInfo, err := s.DMGProcessor.Process(j)
 	if err != nil {
@@ -414,39 +418,38 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 	}
 	nImages := len(dmgAttrs.sourcePixelsList)
 	if nImages == 0 {
-		newJob, err := s.createJob(&j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels)
+		newJob, err := s.createJob(j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels)
 		if err != nil {
 			return err
 		}
-		jch <- *newJob
+		jch <- newJob
 		return nil
 	}
 	for i := 0; i < nImages; i++ {
-		newJob, err := s.createJob(&j, 0, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i])
+		newJob, err := s.createJob(j, i, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i])
 		if err != nil {
 			return err
 		}
-		jch <- *newJob
+		jch <- newJob
 	}
 	return nil
 }
 
-func (s imageBandSplitter) createJob(originalJob *process.Job,
-	jobIndex int,
-	sourcePixels, sourceLabels string) (*process.Job, error) {
-	if sourcePixels == "" {
-		return nil, fmt.Errorf("No source pixels has been defined")
+func (s imageBandSplitter) createJob(j process.Job, jobIndex int, pixels, labels string) (process.Job, error) {
+	if pixels == "" {
+		return j, fmt.Errorf("No source pixels has been defined")
 	}
-	if sourceLabels == "" {
-		return nil, fmt.Errorf("No source labels has been defined")
+	if labels == "" {
+		return j, fmt.Errorf("No source labels has been defined")
 	}
-	newJobArgs := originalJob.JArgs
-	newJobArgs.UpdateStringArg("pixels", sourcePixels)
-	newJobArgs.UpdateStringArg("labels", sourceLabels)
-	return &process.Job{
-		Executable:     originalJob.Executable,
-		Name:           fmt.Sprintf("%s_%d", originalJob.Name, jobIndex),
+	newJobArgs := j.JArgs.Clone()
+	newJobArgs.UpdateIntArg("clientIndex", jobIndex)
+	newJobArgs.UpdateStringArg("pixels", pixels)
+	newJobArgs.UpdateStringArg("labels", labels)
+	return process.Job{
+		Executable:     j.Executable,
+		Name:           fmt.Sprintf("%s_%d", j.Name, jobIndex),
 		JArgs:          newJobArgs,
-		CmdlineBuilder: originalJob.CmdlineBuilder,
+		CmdlineBuilder: j.CmdlineBuilder,
 	}, nil
 }

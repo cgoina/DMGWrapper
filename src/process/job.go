@@ -60,6 +60,7 @@ func NewParallelProcessor(jobProcessor Processor, jobSplitter Splitter, resource
 
 // ParallelJob information about a parallel job
 type ParallelJob struct {
+	done chan struct{}
 }
 
 // JobStdout a parallel job's standard output
@@ -74,6 +75,7 @@ func (pj ParallelJob) JobStderr() (io.ReadCloser, error) {
 
 // WaitForTermination wait for job's completion
 func (pj ParallelJob) WaitForTermination() error {
+	<-pj.done
 	return nil
 }
 
@@ -84,6 +86,10 @@ func (p *ParallelProcessor) Process(j Job) (Info, error) {
 		maxRunningJobs = 1
 	}
 	workerPool := make(chan *processWorker, maxRunningJobs)
+
+	jobInfo := ParallelJob{
+		done: make(chan struct{}, 1),
+	}
 
 	stopWorkers := func() {
 		var done struct{}
@@ -96,6 +102,7 @@ func (p *ParallelProcessor) Process(j Job) (Info, error) {
 			w.quit <- done
 			<-w.done
 		}
+		jobInfo.done <- done
 	}
 
 	defer stopWorkers()
@@ -117,7 +124,7 @@ func (p *ParallelProcessor) Process(j Job) (Info, error) {
 		}
 	}
 
-	return ParallelJob{}, processingErr
+	return jobInfo, processingErr
 }
 
 type processWorker struct {
@@ -145,7 +152,10 @@ func startWorker(errc chan error, quit chan struct{}, pool chan *processWorker, 
 func (p *ParallelProcessor) splitJob(j Job) chan Job {
 	jobQueueSize := p.resources.GetIntProperty("jobQueueSize")
 	jch := make(chan Job, jobQueueSize)
-	go p.jobSplitter.SplitJob(j, jch)
+	go func() {
+		p.jobSplitter.SplitJob(j, jch)
+		close(jch)
+	}()
 	return jch
 }
 
@@ -171,11 +181,16 @@ func (w *processWorker) run() {
 			// process the job
 			log.Printf("Process Job: %v", j)
 			jobInfo, err := w.jp.Process(j)
+
 			if err == nil {
-				err = jobInfo.WaitForTermination()
+				if err = jobInfo.WaitForTermination(); err != nil {
+					log.Println(err)
+					w.setError(err)
+				}
+			} else {
+				log.Println(err)
+				w.setError(err)
 			}
-			log.Println(err)
-			w.setError(err)
 		case <-w.quit:
 			// done
 			done = true

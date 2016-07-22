@@ -82,9 +82,9 @@ func main() {
 			log.Fatalf("Error instantiating the DMG Server")
 		}
 	}
-	dmgService := dmg.DMGService{
+	dmgService := dmg.Service{
 		DMGProcessor: dmgProcessor,
-		Resources: *resources,
+		Resources:    *resources,
 	}
 	if err = dmgService.ProcessDMG(cmdArgs); err != nil {
 		log.Fatalf("Error during DMG processing: %v", err)

@@ -42,23 +42,39 @@ type FlagsCtor interface {
 type Args struct {
 	Flags       *flag.FlagSet
 	config      config.Config
-	changedArgs flag.FlagSet
+	changedArgs map[string]interface{}
 }
 
 // NewArgs creates a argument set
 func NewArgs(flagsCtor FlagsCtor) *Args {
-	args := &Args{}
-	args.Flags = flag.NewFlagSet(flagsCtor.Name(), flag.ExitOnError)
+	args := &Args{
+		Flags:       flag.NewFlagSet(flagsCtor.Name(), flag.ExitOnError),
+		changedArgs: make(map[string]interface{}),
+	}
 	flagsCtor.DefineArgs(args.Flags)
 	return args
 }
 
+// Clone - clones the current arguments
+func (a *Args) Clone() Args {
+	cloneArgs := Args{
+		Flags:  a.Flags,
+		config: a.config,
+		changedArgs: make(map[string]interface{}),
+	}
+	for k, v := range a.changedArgs {
+		cloneArgs.changedArgs[k] = v
+	}
+	return cloneArgs
+}
+
 // GetArgValue return the value of the argument with the specified name
 func (a Args) GetArgValue(name string) (v interface{}, err error) {
-	f := a.changedArgs.Lookup(name)
-	if f == nil {
-		f = a.Flags.Lookup(name)
+	v = a.changedArgs[name]
+	if v != nil {
+		return v, nil
 	}
+	f := a.Flags.Lookup(name)
 	if f == nil {
 		return 0, fmt.Errorf("No flag found for %s", name)
 	}
@@ -142,24 +158,12 @@ func (a Args) GetStringListArgValue(name string) ([]string, error) {
 
 // UpdateIntArg set the int value for the named argument
 func (a *Args) UpdateIntArg(name string, value int) {
-	f := a.changedArgs.Lookup(name)
-	if f != nil {
-		f.Value.Set(strconv.FormatInt(int64(value), 10))
-	} else {
-		valRef := a.changedArgs.Int(name, value, "")
-		*valRef = value
-	}
+	a.changedArgs[name] = value
 }
 
 // UpdateStringArg set the string value for the named argument
 func (a *Args) UpdateStringArg(name string, value string) {
-	f := a.changedArgs.Lookup(name)
-	if f != nil {
-		f.Value.Set(value)
-	} else {
-		valRef := a.changedArgs.String(name, value, "")
-		*valRef = value
-	}
+	a.changedArgs[name] = value
 }
 
 // AddArgs append the list of arguments to the current arglist
