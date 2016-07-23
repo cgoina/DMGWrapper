@@ -33,6 +33,7 @@ type Attrs struct {
 	sourceLabels     string
 	destImg          string
 	scratchDir       string
+	targetDir        string
 }
 
 // Name method
@@ -66,6 +67,7 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.StringVar(&a.sourceLabels, "labels", "", "Source image labels")
 	fs.StringVar(&a.destImg, "out", "", "Destination image")
 	fs.StringVar(&a.scratchDir, "temp", "/var/tmp", "Scratch directory")
+	fs.StringVar(&a.targetDir, "targetDir", "", "Destination directory")
 }
 
 // IsHelpFlagSet method
