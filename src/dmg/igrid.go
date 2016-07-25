@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -24,38 +23,6 @@ type iGrid struct {
 	minCol, minRow int
 	maxCol, maxRow int
 	tiles        map[iGridTileCoord]*iGridTile
-}
-
-type sortedIGridTilesByCoord []*iGridTile
-
-// Len implements the sort.Interface Len
-func (st sortedIGridTilesByCoord) Len() int {
-	return len(st)
-}
-
-// Swap two members of the array
-func (st sortedIGridTilesByCoord) Swap(i, j int) {
-	st[i], st[j] = st[j], st[i]
-}
-
-// Less compares two members of the array
-func (st sortedIGridTilesByCoord) Less(i, j int) bool {
-	if st[i].coord.row != st[j].coord.row {
-		return st[i].coord.row < st[j].coord.row
-	}
-	return st[i].coord.col < st[j].coord.col
-}
-
-func (ig iGrid) sortedNonEmptyTiles() []*iGridTile {
-	tl := make([]*iGridTile, 0, len(ig.tiles))
-	for _, v := range ig.tiles {
-		if !strings.Contains(v.name, "empty") {
-			tl = append(tl, v)
-		}
-	}
-	st := sortedIGridTilesByCoord(tl)
-	sort.Stable(st)
-	return tl
 }
 
 type iGridReader struct {
