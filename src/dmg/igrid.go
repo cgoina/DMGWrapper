@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -14,38 +15,64 @@ type iGridTileCoord struct {
 }
 
 type iGridTile struct {
-	coord  iGridTileCoord
-	pixels string
-	labels string
+	coord iGridTileCoord
+	name  string
 }
 
 type iGrid struct {
-	ncols, nrows int
+	nCols, nRows int
+	minCol, minRow int
+	maxCol, maxRow int
 	tiles        map[iGridTileCoord]*iGridTile
 }
 
-type iGridReader struct {
-	pixelsName   string
-	pixelsReader io.ReadCloser
-	labelsName   string
-	labelsReader io.ReadCloser
+type sortedIGridTilesByCoord []*iGridTile
+
+// Len implements the sort.Interface Len
+func (st sortedIGridTilesByCoord) Len() int {
+	return len(st)
 }
 
-func open(pixels, labels string) (*iGridReader, error) {
-	var err error
-	var pixelsReader, labelsReader io.ReadCloser
+// Swap two members of the array
+func (st sortedIGridTilesByCoord) Swap(i, j int) {
+	st[i], st[j] = st[j], st[i]
+}
 
-	if pixelsReader, err = os.Open(pixels); err != nil {
-		return nil, fmt.Errorf("Error opening %s: %v", pixels, err)
+// Less compares two members of the array
+func (st sortedIGridTilesByCoord) Less(i, j int) bool {
+	if st[i].coord.row != st[j].coord.row {
+		return st[i].coord.row < st[j].coord.row
 	}
-	if labelsReader, err = os.Open(labels); err != nil {
-		return nil, fmt.Errorf("Error opening %s: %v", labels, err)
+	return st[i].coord.col < st[j].coord.col
+}
+
+func (ig iGrid) sortedNonEmptyTiles() []*iGridTile {
+	tl := make([]*iGridTile, 0, len(ig.tiles))
+	for _, v := range ig.tiles {
+		if !strings.Contains(v.name, "empty") {
+			tl = append(tl, v)
+		}
+	}
+	st := sortedIGridTilesByCoord(tl)
+	sort.Stable(st)
+	return tl
+}
+
+type iGridReader struct {
+	name   string
+	reader io.ReadCloser
+}
+
+func open(name string) (*iGridReader, error) {
+	var err error
+	var reader io.ReadCloser
+
+	if reader, err = os.Open(name); err != nil {
+		return nil, fmt.Errorf("Error opening %s: %v", name, err)
 	}
 	return &iGridReader{
-		pixelsName:   pixels,
-		pixelsReader: pixelsReader,
-		labelsName:   labels,
-		labelsReader: labelsReader,
+		name:   name,
+		reader: reader,
 	}, nil
 }
 
@@ -55,92 +82,85 @@ func (gr *iGridReader) read() (*iGrid, error) {
 	g := &iGrid{
 		tiles: make(map[iGridTileCoord]*iGridTile),
 	}
-	defer func() {
-		gr.pixelsReader.Close()
-		gr.labelsReader.Close()
-	}()
-	
-	pixelsScanner := bufio.NewScanner(gr.pixelsReader)
-	labelsScanner := bufio.NewScanner(gr.labelsReader)
+	scanner := bufio.NewScanner(gr.reader)
 
-	if g.ncols, err = gr.readTileDim(pixelsScanner, labelsScanner, "Columns:"); err != nil {
+	if g.nCols, err = gr.readTileDim(scanner, "Columns:"); err != nil {
 		return g, err
 	}
-	if g.nrows, err = gr.readTileDim(pixelsScanner, labelsScanner, "Rows:"); err != nil {
+	if g.nRows, err = gr.readTileDim(scanner, "Rows:"); err != nil {
 		return g, err
 	}
+	var minCol, minRow, maxCol, maxRow int = -1, -1, -1, -1
 	for {
-		pline, lline, done, err := gr.readLine(pixelsScanner, labelsScanner)
+		line, done, err := gr.readLine(scanner)
 		if err != nil {
 			return g, err
 		}
 		if done {
 			break
 		}
+		if !strings.Contains(line, "empty") {
+			if minCol == -1 || col < minCol {
+				minCol = col
+			}
+			if minRow == -1 || row < minRow {
+				minRow = row
+			}
+			if maxCol == -1 || col >= maxCol {
+				maxCol = col + 1
+			}
+			if maxRow == -1 || row >= maxRow {
+				maxRow = row + 1
+			}
+		}
 		tile := &iGridTile{
-			coord:  iGridTileCoord{col, row},
-			pixels: pline,
-			labels: lline,
+			coord: iGridTileCoord{col, row},
+			name:  line,
 		}
 		g.tiles[tile.coord] = tile
 		col++
-		if col >= g.ncols {
+		if col >= g.nCols {
 			col = 0
 			row++
 		}
 	}
-	if err = pixelsScanner.Err(); err != nil {
-		return g, fmt.Errorf("Error reading iGrid pixels %s: %v", gr.pixelsName, err)
-	}
-	if err = labelsScanner.Err(); err != nil {
-		return g, fmt.Errorf("Error reading iGrid labels %s: %v", gr.labelsName, err)
+	g.minCol = minCol
+	g.minRow = minRow
+	g.maxCol = maxCol
+	g.maxRow = maxRow
+	if err = scanner.Err(); err != nil {
+		return g, fmt.Errorf("Error reading iGrid pixels %s: %v", gr.name, err)
 	}
 	return g, nil
 }
 
-func (gr *iGridReader) readLine(pixelsScanner, labelsScanner *bufio.Scanner) (pixelsLine, labelsLine string,
-	done bool, err error) {
-	pixelsDone := pixelsScanner.Scan()
-	labelsDone := labelsScanner.Scan()
-	if pixelsDone && labelsDone {
-		return "", "", true, nil
-	}
-	if pixelsDone {
-		return "", labelsScanner.Text(), true, fmt.Errorf("There are more labels than pixels in (%s, %s)",
-			gr.pixelsName, gr.labelsName)
-	}
-	if labelsDone {
-		return pixelsScanner.Text(), "", true, fmt.Errorf("There are more pixels than labels in (%s, %s)",
-			gr.pixelsName, gr.labelsName)
-	}
-	return pixelsScanner.Text(), labelsScanner.Text(), false, nil
+func (gr *iGridReader) close() error {
+	return gr.reader.Close()
 }
 
-func (gr *iGridReader) readTileDim(pixelsScanner, labelsScanner *bufio.Scanner, dimPrefix string) (int, error) {
-	pdimline, ldimline, done, err := gr.readLine(pixelsScanner, labelsScanner)
+func (gr *iGridReader) readLine(scanner *bufio.Scanner) (line string, done bool, err error) {
+	done = scanner.Scan()
+	if done {
+		return "", true, nil
+	}
+	return scanner.Text(), false, nil
+}
+
+func (gr *iGridReader) readTileDim(scanner *bufio.Scanner, dimPrefix string) (int, error) {
+	dimline, done, err := gr.readLine(scanner)
 	if err != nil {
-		return 0, fmt.Errorf("Error reading %s from (%s, %s): %v", dimPrefix,
-			gr.pixelsName, gr.labelsName, err)
+		return 0, fmt.Errorf("Error reading %s from %s: %v", dimPrefix, gr.name, err)
 	}
 	if done {
-		return 0, fmt.Errorf("Error unexpected EOF reading %s from (%s, %s)", dimPrefix,
-			gr.pixelsName, gr.labelsName)
+		return 0, fmt.Errorf("Error unexpected EOF reading %s from %s", dimPrefix, gr.name)
 	}
-	pdimline = strings.TrimSpace(strings.TrimLeft(pdimline, dimPrefix))
-	ldimline = strings.TrimSpace(strings.TrimLeft(ldimline, dimPrefix))
-	pdim, err := strconv.Atoi(pdimline)
+	dimline = strings.TrimSpace(strings.TrimLeft(dimline, dimPrefix))
+	dim, err := strconv.Atoi(dimline)
 	if err != nil {
-		return 0, fmt.Errorf("Error converting to an int %s pixels from (%s, %s): %v", dimPrefix,
-			gr.pixelsName, gr.labelsName, err)
+		return 0, fmt.Errorf("Error converting to an int %s value from %s: %v", dimPrefix, gr.name, err)
 	}
-	ldim, err := strconv.Atoi(ldimline)
-	if err != nil {
-		return 0, fmt.Errorf("Error converting to an int %s labels from (%s, %s): %v", dimPrefix,
-			gr.pixelsName, gr.labelsName, err)
+	if dim == 0 {
+		return 0, fmt.Errorf("Error invalid %s value from %s", dimPrefix, gr.name)
 	}
-	if pdim != ldim || pdim == 0 {
-		return 0, fmt.Errorf("Error invalid %s value from (%s, %s) - (%d, %d)", dimPrefix,
-			gr.pixelsName, gr.labelsName, pdim, ldim)
-	}
-	return pdim, nil
+	return dim, nil
 }
