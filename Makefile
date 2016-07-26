@@ -16,6 +16,9 @@ lint:
 	@golint src/process
 	@golint src/dmg
 
+test:
+	@go test dmg
+
 build:
 	@go build process
 	@go build drmaautils

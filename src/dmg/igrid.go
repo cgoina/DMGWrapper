@@ -121,15 +121,16 @@ func (gr *iGridReader) close() error {
 }
 
 func (gr *iGridReader) readLine(scanner *bufio.Scanner) (line string, done bool, err error) {
-	done = scanner.Scan()
-	if done {
-		return "", true, nil
+	success := scanner.Scan()
+	if success {
+		return scanner.Text(), false, nil
 	}
-	return scanner.Text(), false, nil
+	return scanner.Text(), true, scanner.Err()
 }
 
 func (gr *iGridReader) readTileDim(scanner *bufio.Scanner, dimPrefix string) (int, error) {
 	dimline, done, err := gr.readLine(scanner)
+	println("!!!!!!!!!!!!!! DIM", dimline)
 	if err != nil {
 		return 0, fmt.Errorf("Error reading %s from %s: %v", dimPrefix, gr.name, err)
 	}
