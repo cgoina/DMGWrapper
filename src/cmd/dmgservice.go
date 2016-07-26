@@ -152,6 +152,7 @@ func createDMGService(operation string,
 	case "dmgImage":
 		return serviceFunc(func() error {
 			j := process.Job{
+				Name:  jobName,
 				JArgs: args.Clone(),
 			}
 			return bandsProcessor.Run(j)
@@ -166,6 +167,7 @@ func createDMGService(operation string,
 			}
 
 			j := process.Job{
+				Name:  jobName,
 				JArgs: *sectionArgs,
 			}
 			if err := bandsProcessor.Run(j); err != nil {
