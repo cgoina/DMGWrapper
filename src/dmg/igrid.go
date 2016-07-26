@@ -130,7 +130,6 @@ func (gr *iGridReader) readLine(scanner *bufio.Scanner) (line string, done bool,
 
 func (gr *iGridReader) readTileDim(scanner *bufio.Scanner, dimPrefix string) (int, error) {
 	dimline, done, err := gr.readLine(scanner)
-	println("!!!!!!!!!!!!!! DIM", dimline)
 	if err != nil {
 		return 0, fmt.Errorf("Error reading %s from %s: %v", dimPrefix, gr.name, err)
 	}
@@ -166,10 +165,44 @@ func crop(sg *iGrid, minCol, minRow, maxCol, maxRow int) *iGrid {
 	return tg
 }
 
-type iGridWriter struct {
-	name          string
-	emptyTileName string
-	writer        io.WriteCloser
+func mergeSectionGrids(gs ...*iGrid) *iGrid {
+	mg := &iGrid{
+		tiles: make(map[iGridTileCoord]*iGridTile),
+	}
+	for _, g := range gs {
+		for row := 0; row < g.nRows; row++ {
+			for col := 0; col < g.nCols; col++ {
+				tn := g.getTile(col, row)
+				if tn == "" {
+					continue
+				}
+				mg.setTile(mg.nCols+col, row, tn)
+			}
+		}
+		mg.nCols += g.nCols
+		if g.nRows > mg.nRows {
+			mg.nRows = g.nRows
+		}
+	}
+	return mg
+}
+
+func uncrop(sg *iGrid, minCol, minRow, maxCol, maxRow int) *iGrid {
+	tg := &iGrid{
+		nCols: maxCol,
+		nRows: maxRow,
+		tiles: make(map[iGridTileCoord]*iGridTile),
+	}
+	for row := 0; row < sg.nRows; row++ {
+		for col := 0; col < sg.nCols; col++ {
+			tn := sg.getTile(col, row)
+			if tn == "" {
+				continue
+			}
+			tg.setTile(minCol+col, minRow+row, tn)
+		}
+	}
+	return tg
 }
 
 func write(w io.Writer, g *iGrid, emptyTileName string) error {

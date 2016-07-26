@@ -19,7 +19,7 @@ lint:
 test:
 	@go test dmg
 
-build:
+build: test
 	@go build process
 	@go build drmaautils
 	@go build dmg
