@@ -18,11 +18,26 @@ type iGridTile struct {
 	name  string
 }
 
+// iGrid contains grid dimensions and the the list of non empty tiles indexed by their coordinates.
 type iGrid struct {
-	nCols, nRows int
+	nCols, nRows   int
 	minCol, minRow int
 	maxCol, maxRow int
-	tiles        map[iGridTileCoord]*iGridTile
+	tiles          map[iGridTileCoord]*iGridTile
+}
+
+func (g iGrid) getTile(col, row int) string {
+	tc := iGridTileCoord{col, row}
+	t := g.tiles[tc]
+	if t == nil {
+		return ""
+	}
+	return t.name
+}
+
+func (g *iGrid) setTile(col, row int, name string) {
+	tc := iGridTileCoord{col, row}
+	g.tiles[tc] = &iGridTile{tc, name}
 }
 
 type iGridReader struct {
@@ -79,12 +94,12 @@ func (gr *iGridReader) read() (*iGrid, error) {
 			if maxRow == -1 || row >= maxRow {
 				maxRow = row + 1
 			}
+			tile := &iGridTile{
+				coord: iGridTileCoord{col, row},
+				name:  line,
+			}
+			g.tiles[tile.coord] = tile
 		}
-		tile := &iGridTile{
-			coord: iGridTileCoord{col, row},
-			name:  line,
-		}
-		g.tiles[tile.coord] = tile
 		col++
 		if col >= g.nCols {
 			col = 0
@@ -130,4 +145,46 @@ func (gr *iGridReader) readTileDim(scanner *bufio.Scanner, dimPrefix string) (in
 		return 0, fmt.Errorf("Error invalid %s value from %s", dimPrefix, gr.name)
 	}
 	return dim, nil
+}
+
+func crop(sg *iGrid, minCol, minRow, maxCol, maxRow int) *iGrid {
+	tg := &iGrid{
+		nCols: maxCol - minCol,
+		nRows: maxRow - minRow,
+		tiles: make(map[iGridTileCoord]*iGridTile),
+	}
+	for row := minRow; row < maxRow; row++ {
+		for col := minCol; col < maxCol; col++ {
+			tn := sg.getTile(col, row)
+			if tn == "" {
+				continue
+			}
+			tg.setTile(col-minCol, row-minRow, tn)
+		}
+	}
+	return tg
+}
+
+type iGridWriter struct {
+	name          string
+	emptyTileName string
+	writer        io.WriteCloser
+}
+
+func write(w io.Writer, g *iGrid, emptyTileName string) error {
+	if _, err := fmt.Fprintf(w, "Columns: %d\nRows: %d\n", g.nCols, g.nRows); err != nil {
+		return err
+	}
+	for row := 0; row < g.nRows; row++ {
+		for col := 0; col < g.nRows; col++ {
+			tn := g.getTile(col, row)
+			if tn == "" {
+				tn = emptyTileName
+			}
+			if _, err := fmt.Fprintf(w, "%s\n", tn); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

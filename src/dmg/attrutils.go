@@ -34,6 +34,7 @@ type Attrs struct {
 	destImg          string
 	scratchDir       string
 	targetDir        string
+	coordFile        string
 }
 
 // Name method
@@ -68,6 +69,7 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.StringVar(&a.destImg, "out", "", "Destination image")
 	fs.StringVar(&a.scratchDir, "temp", "/var/tmp", "Scratch directory")
 	fs.StringVar(&a.targetDir, "targetDir", "", "Destination directory")
+	fs.StringVar(&a.coordFile, "coordFile", "offset.json", "Coordinates file")
 }
 
 // IsHelpFlagSet method
@@ -92,6 +94,9 @@ func (a *Attrs) validate() error {
 			return fmt.Errorf("The number of sections must be equal to the number of source images")
 		}
 		return nil
+	}
+	if a.nSections <= 0 {
+		return fmt.Errorf("Invalid number of serctions %d", a.nSections)
 	}
 	if nImages != a.nSections {
 		return fmt.Errorf("The number of sections must be equal to the number of source images")
@@ -174,6 +179,12 @@ func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
 		return err
 	}
 	if a.scratchDir, err = ja.GetStringArgValue("temp"); err != nil {
+		return err
+	}
+	if a.targetDir, err = ja.GetStringArgValue("targetDir"); err != nil {
+		return err
+	}
+	if a.coordFile, err = ja.GetStringArgValue("coordFile"); err != nil {
 		return err
 	}
 	return nil

@@ -166,6 +166,11 @@ func (a *Args) UpdateStringArg(name string, value string) {
 	a.changedArgs[name] = value
 }
 
+// UpdateStringListArg set the string list value for the named argument
+func (a *Args) UpdateStringListArg(name string, value []string) {
+	a.changedArgs[name] = value
+}
+
 // AddArgs append the list of arguments to the current arglist
 func AddArgs(arglist []string, args ...string) []string {
 	return append(arglist, args...)

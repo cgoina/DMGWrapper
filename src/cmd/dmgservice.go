@@ -159,14 +159,19 @@ func createDMGService(operation string,
 
 	case "dmgSection":
 		return serviceFunc(func() error {
-			sectionSplitter := dmg.NewSectionSplitter()
-			sectionProcessor := process.NewParallelProcessor(bandsProcessor,
-				sectionSplitter,
-				resources)
-			j := process.Job{
-				JArgs: args.Clone(),
+			var sectionPreparer dmg.SectionPreparer
+			sectionArgs, err := sectionPreparer.CreateSectionJobArgs(args, resources)
+			if err != nil {
+				return err
 			}
-			return sectionProcessor.Run(j)
+
+			j := process.Job{
+				JArgs: *sectionArgs,
+			}
+			if err := bandsProcessor.Run(j); err != nil {
+				return err
+			}
+			return nil
 		}), nil
 	default:
 		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection}",
