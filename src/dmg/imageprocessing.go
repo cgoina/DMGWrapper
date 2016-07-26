@@ -245,6 +245,7 @@ func (p ImageBandsProcessor) Start(j process.Job) (process.Info, error) {
 	}
 	serverArgs := args.Clone()
 	serverJob := process.Job{
+		Name:           fmt.Sprintf("%s-Server", j.Name),
 		Executable:     p.Resources.GetStringProperty("dmgServer"),
 		JArgs:          serverArgs,
 		CmdlineBuilder: serverCmdlineBuilder{},
@@ -258,6 +259,7 @@ func (p ImageBandsProcessor) Start(j process.Job) (process.Info, error) {
 	clientArgs := args.Clone()
 	clientArgs.UpdateStringArg("serverAddress", serverAddress)
 	clientJob := process.Job{
+		Name:           fmt.Sprintf("%s-Client", j.Name),
 		Executable:     p.Resources.GetStringProperty("dmgClient"),
 		JArgs:          clientArgs,
 		CmdlineBuilder: clientCmdlineBuilder{},
