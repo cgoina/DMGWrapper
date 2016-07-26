@@ -15,5 +15,7 @@
     "outputDir": "logs",
     "errorDir": "logs",
     "maxRunningJobs": 100,
-    "jobQueueSize": 100
+    "jobQueueSize": 100,
+    "emptyPixelsTile": "/tier2/flyTEM/nobackup/rendered_boxes/FAFB00/v12_align_tps/8192x8192/empty.png",
+    "emptyLabelsTile": "/tier2/flyTEM/nobackup/rendered_boxes/FAFB00/v12_align_tps/8192x8192-label/empty.png"
 }

@@ -159,8 +159,8 @@ func createDMGService(operation string,
 
 	case "dmgSection":
 		return serviceFunc(func() error {
-			var sectionPreparer dmg.SectionPreparer
-			sectionArgs, err := sectionPreparer.CreateSectionJobArgs(args, resources)
+			var sectionHelper dmg.SectionHelper
+			sectionArgs, err := sectionHelper.PrepareSectionJobArgs(args, resources)
 			if err != nil {
 				return err
 			}
@@ -169,6 +169,9 @@ func createDMGService(operation string,
 				JArgs: *sectionArgs,
 			}
 			if err := bandsProcessor.Run(j); err != nil {
+				return err
+			}
+			if err := sectionHelper.CreateSectionJobResults(sectionArgs, resources); err != nil {
 				return err
 			}
 			return nil

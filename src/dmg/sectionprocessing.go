@@ -27,18 +27,25 @@ type CropInfo struct {
 	TileHeight      int    `json:"tile_size_y"`
 }
 
-// SectionPreparer prepares the section data
-type SectionPreparer struct {
+// SectionHelper is an object that can be used for preparing the job arguments for a section
+// as well as for creating the final results
+type SectionHelper struct {
 }
 
-// CreateSectionJobArgs splits the grid into multiple bands and creates the corresponding job
-func (s SectionPreparer) CreateSectionJobArgs(args *arg.Args, resources config.Config) (*arg.Args, error) {
+// PrepareSectionJobArgs splits the grid into multiple bands and creates the corresponding job
+func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Config) (*arg.Args, error) {
 	var err error
 	var dmgAttrs Attrs
 
 	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
 		return nil, err
 	}
+
+	err = os.MkdirAll(dmgAttrs.targetDir, 0775)
+	if err != nil {
+		return nil, err
+	}
+
 	sectionArgs := args.Clone()
 	pixelsGrid, err := readIGrid(dmgAttrs.sourcePixels)
 	if err != nil {
@@ -65,6 +72,7 @@ func (s SectionPreparer) CreateSectionJobArgs(args *arg.Args, resources config.C
 			len(pixelsGrid.tiles), len(labelsGrid.tiles))
 	}
 
+	// split the pixels and labels grids into the specified number of
 	pixelsName := strings.TrimRight(filepath.Base(dmgAttrs.sourcePixels), ".iGrid")
 	labelsName := strings.TrimRight(filepath.Base(dmgAttrs.sourceLabels), ".iGrid")
 	nSections := dmgAttrs.nSections
@@ -79,13 +87,32 @@ func (s SectionPreparer) CreateSectionJobArgs(args *arg.Args, resources config.C
 		MaxRow:          pixelsGrid.maxRow,
 		NRows:           pixelsGrid.nRows,
 	}
-	// split the pixels and labels grids into the specified number of
-	pixelSections := splitGrid(pixelsGrid, cropInfo, nSections)
-	labelSections := splitGrid(labelsGrid, cropInfo, nSections)
+
+	emptyPixels := resources.GetStringProperty("emptyPixelsTile")
+	emptyLabels := resources.GetStringProperty("emptyLabelsTile")
+
+	// crop the pixels iGrid
+	croppedPixelsGrid := crop(pixelsGrid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	// save the cropped pixels iGrid
+	cpn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.pixels.iGrid", pixelsName))
+	if err := writeIGrid(cpn, croppedPixelsGrid, emptyPixels); err != nil {
+		return nil, err
+	}
+	// split the cropped pixels iGrid
+	pixelSections := splitGrid(croppedPixelsGrid, nSections)
+
+	// crop the labels iGrid
+	croppedLabelsGrid := crop(labelsGrid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	// save the cropped labels iGrid
+	cln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.labels.iGrid", labelsName))
+	if err := writeIGrid(cln, croppedLabelsGrid, emptyLabels); err != nil {
+		return nil, err
+	}
+	// split the cropped labels iGrid
+	labelSections := splitGrid(croppedLabelsGrid, nSections)
 
 	var pixelsList, labelsList []string
 
-	emptyPixels := resources.GetStringProperty("EMPTY_PIXELS_TILE")
 	for i, pg := range pixelSections {
 		pn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.pixels.%d.iGrid", pixelsName, i))
 		if err := writeIGrid(pn, pg, emptyPixels); err != nil {
@@ -94,7 +121,6 @@ func (s SectionPreparer) CreateSectionJobArgs(args *arg.Args, resources config.C
 		pixelsList = append(pixelsList, pn)
 	}
 
-	emptyLabels := resources.GetStringProperty("EMPTY_LABELS_TILE")
 	for i, lg := range labelSections {
 		ln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.labels.%d.iGrid", labelsName, i))
 		if err := writeIGrid(ln, lg, emptyLabels); err != nil {
@@ -104,18 +130,21 @@ func (s SectionPreparer) CreateSectionJobArgs(args *arg.Args, resources config.C
 	}
 
 	coordFile := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s", dmgAttrs.coordFile))
-	coordJson, err := json.Marshal(cropInfo)
+	coordJSON, err := json.Marshal(cropInfo)
 	if err != nil {
 		return nil, err
 	}
-	if err = ioutil.WriteFile(coordFile, coordJson, 0664); err != nil {
+	if err = ioutil.WriteFile(coordFile, coordJSON, 0664); err != nil {
 		return nil, err
 	}
+
+	outputFileName := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.iGrid", pixelsName))
 
 	sectionArgs.UpdateStringArg("pixels", "")
 	sectionArgs.UpdateStringArg("labels", "")
 	sectionArgs.UpdateStringListArg("pixelsList", pixelsList)
 	sectionArgs.UpdateStringListArg("labelsList", labelsList)
+	sectionArgs.UpdateStringArg("out", outputFileName)
 
 	return &sectionArgs, nil
 }
@@ -132,14 +161,13 @@ func readIGrid(filename string) (*iGrid, error) {
 	return gr.read()
 }
 
-func splitGrid(g *iGrid, ci CropInfo, nSections int) []*iGrid {
+func splitGrid(g *iGrid, nSections int) []*iGrid {
 	sections := make([]*iGrid, nSections)
 
-	croppedGrid := crop(g, ci.MinCol, ci.MinRow, ci.MaxCol, ci.MaxRow)
-	tilePerSection := croppedGrid.nCols / nSections
+	tilePerSection := g.nCols / nSections
 
 	for section := 0; section < nSections; section++ {
-		sections[section] = crop(croppedGrid, section*tilePerSection, 0, (section+1)*tilePerSection, croppedGrid.nRows)
+		sections[section] = crop(g, section*tilePerSection, 0, (section+1)*tilePerSection, g.nRows)
 	}
 	return sections
 }
@@ -155,4 +183,10 @@ func writeIGrid(filename string, g *iGrid, emptyTileName string) error {
 	}()
 
 	return write(gw, g, emptyTileName)
+}
+
+// CreateSectionJobResults is responsible with merging and creating the final result
+func (s SectionHelper) CreateSectionJobResults(args *arg.Args, resources config.Config) error {
+	// TODO !!!!
+	return nil
 }

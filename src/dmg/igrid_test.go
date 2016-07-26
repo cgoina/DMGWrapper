@@ -49,7 +49,8 @@ func TestSplitAndMerge(t *testing.T) {
 		NRows:  grid.nRows,
 	}
 
-	gridSections := splitGrid(grid, cropInfo, nSections)
+	croppedGrid := crop(grid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	gridSections := splitGrid(croppedGrid, nSections)
 
 	mergedGrid := mergeSectionGrids(gridSections...)
 
