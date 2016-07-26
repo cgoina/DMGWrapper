@@ -177,7 +177,7 @@ func write(w io.Writer, g *iGrid, emptyTileName string) error {
 		return err
 	}
 	for row := 0; row < g.nRows; row++ {
-		for col := 0; col < g.nRows; col++ {
+		for col := 0; col < g.nCols; col++ {
 			tn := g.getTile(col, row)
 			if tn == "" {
 				tn = emptyTileName
