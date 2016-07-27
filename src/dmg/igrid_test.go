@@ -52,7 +52,7 @@ func TestSplitAndMerge(t *testing.T) {
 	croppedGrid := crop(grid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.MaxCol, coordInfo.MaxRow)
 	gridSections := splitGrid(croppedGrid, nSections)
 
-	mergedGrid := mergeSectionGrids(gridSections...)
+	mergedGrid := mergeColumnGrids(gridSections...)
 
 	uncroppedGrid := uncrop(mergedGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.NCols, coordInfo.NRows)
 	if uncroppedGrid.nCols != grid.nCols ||

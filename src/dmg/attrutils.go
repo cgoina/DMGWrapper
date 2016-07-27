@@ -29,6 +29,7 @@ type Attrs struct {
 	clientIndex      int
 	sourcePixelsList arg.StringList
 	sourceLabelsList arg.StringList
+	destImgList      arg.StringList
 	sourcePixels     string
 	sourceLabels     string
 	destImg          string
@@ -64,9 +65,10 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.IntVar(&a.nThreads, "threads", 1, "Number of threads")
 	fs.Var(&a.sourcePixelsList, "pixelsList", "List of image pixels")
 	fs.Var(&a.sourceLabelsList, "labelsList", "List of image labels")
+	fs.Var(&a.destImgList, "outList", "List of output images")
 	fs.StringVar(&a.sourcePixels, "pixels", "", "Source image pixels")
 	fs.StringVar(&a.sourceLabels, "labels", "", "Source image labels")
-	fs.StringVar(&a.destImg, "out", "", "Destination image")
+	fs.StringVar(&a.destImg, "out", "", "Output image")
 	fs.StringVar(&a.scratchDir, "temp", "/var/tmp", "Scratch directory")
 	fs.StringVar(&a.targetDir, "targetDir", "", "Destination directory")
 	fs.StringVar(&a.coordFile, "coordFile", "offset.json", "Coordinates file")
@@ -83,12 +85,18 @@ func (a *Attrs) validate() error {
 	if len(a.sourceLabelsList) != nImages {
 		return fmt.Errorf("PixelsList and LabelsList must have the same length")
 	}
+	if len(a.destImgList) != nImages {
+		return fmt.Errorf("PixelsList and Output images must have the same length")
+	}
 	if nImages == 0 {
 		if a.sourcePixels == "" {
 			return fmt.Errorf("No source pixels has been defined")
 		}
 		if a.sourceLabels == "" {
 			return fmt.Errorf("No source labels has been defined")
+		}
+		if a.destImg == "" {
+			return fmt.Errorf("No destination image has been defined")
 		}
 		if a.nSections > 1 {
 			return fmt.Errorf("The number of sections must be equal to the number of source images")
@@ -104,11 +112,15 @@ func (a *Attrs) validate() error {
 	for i := 0; i < nImages; i++ {
 		sourcePixels := a.sourcePixelsList[i]
 		sourceLabels := a.sourceLabelsList[i]
+		destImage := a.destImgList[i]
 		if sourcePixels == "" {
 			return fmt.Errorf("Pixels image not defined at index %d", i)
 		}
 		if sourceLabels == "" {
 			return fmt.Errorf("Labels image not defined at index %d", i)
+		}
+		if destImage == "" {
+			return fmt.Errorf("Output image not defined at index %d", i)
 		}
 	}
 	return nil
@@ -176,6 +188,9 @@ func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
 		return err
 	}
 	if a.sourceLabelsList, err = ja.GetStringListArgValue("labelsList"); err != nil {
+		return err
+	}
+	if a.destImgList, err = ja.GetStringListArgValue("outList"); err != nil {
 		return err
 	}
 	if a.scratchDir, err = ja.GetStringArgValue("temp"); err != nil {

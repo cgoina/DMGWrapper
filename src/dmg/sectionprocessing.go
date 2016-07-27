@@ -17,30 +17,31 @@ import (
 )
 
 const (
-	cropPixelsExt    = ".crop.pixels"
-	cropLabelsExt    = ".crop.labels"
-	croppedResultExt = ".croppedResult.iGrid"
+	croppedPixelsMarker = ".crop.pixels"
+	croppedLabelsMarker = ".crop.labels"
+	croppedResultMarker = ".crop.result"
+	finalResultMarker   = ".final"
 )
 
-// dmgSectionJobInfo DMG section job info
-type dmgSectionJobInfo struct {
+// sectionJobInfo DMG section job info
+type sectionJobInfo struct {
 	dmgProcessInfo process.Info
 	sectionArgs    *arg.Args
 	resources      config.Config
 }
 
 // JobStdout job's standard output
-func (sj dmgSectionJobInfo) JobStdout() (io.ReadCloser, error) {
+func (sj sectionJobInfo) JobStdout() (io.ReadCloser, error) {
 	return os.Stdout, nil
 }
 
 // JobStderr job's standard error
-func (sj dmgSectionJobInfo) JobStderr() (io.ReadCloser, error) {
+func (sj sectionJobInfo) JobStderr() (io.ReadCloser, error) {
 	return os.Stderr, nil
 }
 
 // WaitForTermination wait for job's completion
-func (sj dmgSectionJobInfo) WaitForTermination() error {
+func (sj sectionJobInfo) WaitForTermination() error {
 	var sectionHelper SectionHelper
 	if err := sectionHelper.CreateSectionJobResults(sj.sectionArgs, sj.resources); err != nil {
 		return err
@@ -48,8 +49,8 @@ func (sj dmgSectionJobInfo) WaitForTermination() error {
 	return nil
 }
 
-// DMGSectionProcessor - section processor
-type DMGSectionProcessor struct {
+// SectionProcessor - section processor
+type SectionProcessor struct {
 	process.JobWatcher
 	ImageProcessor   process.Processor
 	Resources        config.Config
@@ -57,7 +58,7 @@ type DMGSectionProcessor struct {
 }
 
 // Run the given job
-func (sp DMGSectionProcessor) Run(j process.Job) error {
+func (sp SectionProcessor) Run(j process.Job) error {
 	ji, err := sp.Start(j)
 	if err != nil {
 		return fmt.Errorf("Error starting %v: %v", j, err)
@@ -66,7 +67,7 @@ func (sp DMGSectionProcessor) Run(j process.Job) error {
 }
 
 // Start launches the server
-func (sp DMGSectionProcessor) Start(j process.Job) (process.Info, error) {
+func (sp SectionProcessor) Start(j process.Job) (process.Info, error) {
 	var sectionHelper SectionHelper
 	sectionArgs, err := sectionHelper.PrepareSectionJobArgs(&j.JArgs, sp.Resources)
 	if err != nil {
@@ -85,7 +86,7 @@ func (sp DMGSectionProcessor) Start(j process.Job) (process.Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dmgSectionJobInfo{
+	return sectionJobInfo{
 		dmgProcessInfo: dmgProcessInfo,
 		sectionArgs:    sectionArgs,
 		resources:      sp.Resources,
@@ -136,13 +137,18 @@ func (sclb SectionJobCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error
 		cmdargs = arg.AddArgs(cmdargs, "-serverPort", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
 	if dmgAttrs.sourcePixels != "" && dmgAttrs.sourceLabels != "" {
-		cmdargs = arg.AddArgs(cmdargs, "-pixels", dmgAttrs.sourcePixels, "-labels", dmgAttrs.sourceLabels)
+		cmdargs = arg.AddArgs(cmdargs,
+			"-pixels", dmgAttrs.sourcePixels,
+			"-labels", dmgAttrs.sourceLabels,
+			"-out", dmgAttrs.destImg)
 	}
 	if len(dmgAttrs.sourcePixelsList) > 0 && len(dmgAttrs.sourceLabelsList) > 0 {
-		cmdargs = arg.AddArgs(cmdargs, "-pixelsList", dmgAttrs.sourcePixelsList.String())
+		cmdargs = arg.AddArgs(cmdargs,
+			"-pixelsList", dmgAttrs.sourcePixelsList.String(),
+			"-labelsList", dmgAttrs.sourceLabelsList.String(),
+			"-outList", dmgAttrs.destImgList.String())
 	}
-	cmdargs = arg.AddArgs(cmdargs, "-labelsList", dmgAttrs.sourceLabelsList.String())
-	cmdargs = arg.AddArgs(cmdargs, "-temp", dmgAttrs.scratchDir, "-targetDir", dmgAttrs.targetDir, "-out", dmgAttrs.destImg)
+	cmdargs = arg.AddArgs(cmdargs, "-temp", dmgAttrs.scratchDir, "-targetDir", dmgAttrs.targetDir)
 	cmdargs = arg.AddArgs(cmdargs,
 		"-threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10),
 		"-sections", strconv.FormatInt(int64(dmgAttrs.nSections), 10),
@@ -257,18 +263,20 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	// split the cropped labels iGrid
 	labelSections := splitGrid(croppedLabelsGrid, nSections)
 
-	var pixelsList, labelsList []string
+	var pixelsList, labelsList, outputList []string
 
 	for i, pg := range pixelSections {
-		pn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", pixelsName, cropPixelsExt, i))
+		pn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", pixelsName, croppedPixelsMarker, i))
 		if err := writeIGrid(pn, pg, emptyPixels); err != nil {
 			return nil, err
 		}
+		on := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", pixelsName, croppedResultMarker, i))
 		pixelsList = append(pixelsList, pn)
+		outputList = append(outputList, on)
 	}
 
 	for i, lg := range labelSections {
-		ln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", labelsName, cropLabelsExt, i))
+		ln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", labelsName, croppedLabelsMarker, i))
 		if err := writeIGrid(ln, lg, emptyLabels); err != nil {
 			return nil, err
 		}
@@ -284,13 +292,12 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 		return nil, err
 	}
 
-	outputFileName := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s", pixelsName, croppedResultExt))
-
 	sectionArgs.UpdateStringArg("pixels", "")
 	sectionArgs.UpdateStringArg("labels", "")
+	sectionArgs.UpdateStringArg("out", "")
 	sectionArgs.UpdateStringListArg("pixelsList", pixelsList)
 	sectionArgs.UpdateStringListArg("labelsList", labelsList)
-	sectionArgs.UpdateStringArg("out", outputFileName)
+	sectionArgs.UpdateStringListArg("outList", outputList)
 
 	return &sectionArgs, nil
 }
@@ -339,24 +346,45 @@ func (s SectionHelper) CreateSectionJobResults(args *arg.Args, resources config.
 	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
 		return err
 	}
-
+	// read the coordinates file
 	coordFile := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s", dmgAttrs.coordFile))
 	coordInfo, err := readCoordFile(coordFile)
 	if err != nil {
 		return err
 	}
-
-	resultGridFile := dmgAttrs.destImg
-	resultGrid, err := readIGrid(resultGridFile)
-	if err != nil {
+	emptyPixels := resources.GetStringProperty("emptyPixelsTile")
+	// read the result grids
+	var resultDir, resultBaseName string
+	var gridResults []*iGrid
+	for i, rfn := range dmgAttrs.destImgList {
+		gr, err := readIGrid(rfn)
+		if err != nil {
+			return err
+		}
+		gridResults = append(gridResults, gr)
+		rd := filepath.Dir(rfn) // result directory
+		if resultDir == "" {
+			resultDir = rd
+		} else if resultDir != rd {
+			log.Printf("Result directory inconsistency found; '%s' does not appear to be in the '%s' directory",
+				rfn, resultDir)
+		}
+		rbn := strings.Replace(filepath.Base(rfn), fmt.Sprintf("%s.%d.iGrid", croppedResultMarker, i), "", -1) // basename
+		if resultBaseName == "" {
+			resultBaseName = rbn
+		} else if resultBaseName != rbn {
+			log.Printf("Result basename inconsistency found; '%s' does not appear to have the basename '%s'",
+				rfn, resultBaseName)
+		}
+	}
+	// merge the results
+	mergedResultGrid := mergeColumnGrids(gridResults...)
+	mergedResultGridFile := filepath.Join(resultDir, fmt.Sprintf("%s%s.iGrid", resultBaseName, croppedResultMarker))
+	if err := writeIGrid(mergedResultGridFile, mergedResultGrid, emptyPixels); err != nil {
 		return err
 	}
-
-	finalGrid := uncrop(resultGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.NCols, coordInfo.NRows)
-
-	resultDir := filepath.Dir(resultGridFile)
-	resultBaseName := strings.Replace(filepath.Base(resultGridFile), croppedResultExt, "", -1)
-
+	// uncrop the result
+	finalGrid := uncrop(mergedResultGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.NCols, coordInfo.NRows)
 	// rename the tile image files to have the right col/row
 	for row := 0; row < finalGrid.nRows; row++ {
 		for col := 0; col < finalGrid.nCols; col++ {
@@ -365,15 +393,15 @@ func (s SectionHelper) CreateSectionJobResults(args *arg.Args, resources config.
 				continue
 			}
 			oldTileExt := filepath.Ext(oldTileName)
-			newTileName := filepath.Join(resultDir, fmt.Sprintf("%s.%d.%d%s", resultBaseName, col, row, oldTileExt))
+			newTileName := filepath.Join(resultDir, fmt.Sprintf("%s.%d.%d%s", resultBaseName, row, col, oldTileExt))
+			fmt.Printf("Rename %s -> %s\n", oldTileName, newTileName)
 			if renameErr := os.Rename(oldTileName, newTileName); renameErr != nil {
 				log.Printf("Error trying to rename %s -> %s: %v", oldTileName, newTileName, renameErr)
 			}
 			finalGrid.setTile(col, row, newTileName)
 		}
 	}
-	finalResultGridFile := strings.Replace(resultGridFile, croppedResultExt, ".final.iGrid", -1)
-	emptyPixels := resources.GetStringProperty("emptyPixelsTile")
+	finalResultGridFile := filepath.Join(resultDir, fmt.Sprintf("%s%s.iGrid", resultBaseName, finalResultMarker))
 	if err := writeIGrid(finalResultGridFile, finalGrid, emptyPixels); err != nil {
 		return err
 	}

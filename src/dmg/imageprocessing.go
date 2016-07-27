@@ -333,7 +333,8 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 	}
 	nImages := len(dmgAttrs.sourcePixelsList)
 	if nImages == 0 {
-		newJob, err := s.createJob(j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels, dmgAttrs.destImg)
+		newJob, err := s.createJob(j, 0,
+			dmgAttrs.sourcePixels, dmgAttrs.sourceLabels, dmgAttrs.destImg)
 		if err != nil {
 			return err
 		}
@@ -341,7 +342,8 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 		return nil
 	}
 	for i := 0; i < nImages; i++ {
-		newJob, err := s.createJob(j, i, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i], dmgAttrs.destImg)
+		newJob, err := s.createJob(j, i,
+			dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i], dmgAttrs.destImgList[i])
 		if err != nil {
 			return err
 		}
@@ -360,12 +362,11 @@ func (s imageBandSplitter) createJob(j process.Job, jobIndex int, pixels, labels
 	if outputImg == "" {
 		return j, fmt.Errorf("No output image has been defined")
 	}
-	jobOutputImg := strings.Replace(outputImg, ".iGrid", fmt.Sprintf(".%d.iGrid", jobIndex), -1)
 	newJobArgs := j.JArgs.Clone()
 	newJobArgs.UpdateIntArg("clientIndex", jobIndex)
 	newJobArgs.UpdateStringArg("pixels", pixels)
 	newJobArgs.UpdateStringArg("labels", labels)
-	newJobArgs.UpdateStringArg("out", jobOutputImg)
+	newJobArgs.UpdateStringArg("out", outputImg)
 	return process.Job{
 		Executable:     j.Executable,
 		Name:           fmt.Sprintf("%s_%d", j.Name, jobIndex),

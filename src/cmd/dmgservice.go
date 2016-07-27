@@ -194,7 +194,7 @@ func createSectionProcessor(imageProcessor process.Processor, resources config.C
 	case "echo":
 		sectionProcessor = process.NewEchoProcessor()
 	case "local":
-		sectionProcessor = &dmg.DMGSectionProcessor{
+		sectionProcessor = &dmg.SectionProcessor{
 			ImageProcessor:   imageProcessor,
 			Resources:        resources,
 			DMGProcessorType: dmgProcessorType,

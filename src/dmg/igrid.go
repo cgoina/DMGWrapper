@@ -165,7 +165,7 @@ func crop(sg *iGrid, minCol, minRow, maxCol, maxRow int) *iGrid {
 	return tg
 }
 
-func mergeSectionGrids(gs ...*iGrid) *iGrid {
+func mergeColumnGrids(gs ...*iGrid) *iGrid {
 	mg := &iGrid{
 		tiles: make(map[iGridTileCoord]*iGridTile),
 	}
