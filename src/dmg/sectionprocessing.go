@@ -226,8 +226,14 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 
 	width := pixelsGrid.maxCol - pixelsGrid.minCol
 	width = width + nSections - width%nSections
-	minCol := pixelsGrid.minCol
-	maxCol := minCol + width
+	var minCol, maxCol int
+	if pixelsGrid.maxCol - width > 0 {
+		maxCol = pixelsGrid.maxCol
+		minCol = maxCol - width
+	} else {
+		minCol = 0
+		maxCol = minCol + width
+	}
 	fmt.Printf("Image grid bounds are: (%d, %d), (%d, %d)\n", minCol, pixelsGrid.minRow, maxCol, pixelsGrid.maxRow)
 	coordInfo := CoordInfo{
 		InputPixelsName: dmgAttrs.sourcePixels,
