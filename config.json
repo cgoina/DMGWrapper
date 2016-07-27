@@ -3,8 +3,6 @@
     "dmgClient": "/Users/goinac/work/misc/image-processing/dmg-intensity-correction/Bin/Client",
     "ugeQueue": "",
     "ugeResources": {
-        "scalityr": "1",
-	"scalityw": "1",
 	"sandy": "true"
     },
     "ugeJobEnvironment": {
@@ -16,6 +14,7 @@
     "errorDir": "logs",
     "maxRunningJobs": 100,
     "jobQueueSize": 100,
+    "dmgexec": "./dmgservice",
     "emptyPixelsTile": "/tier2/flyTEM/nobackup/rendered_boxes/FAFB00/v12_align_tps/8192x8192/empty.png",
     "emptyLabelsTile": "/tier2/flyTEM/nobackup/rendered_boxes/FAFB00/v12_align_tps/8192x8192-label/empty.png"
 }

@@ -89,7 +89,7 @@ func NewGridProcessor(sessionName, accountingID string, drmaaProxy DRMAAProxy, r
 		dp:           drmaaProxy,
 	}
 	if p.js, err = p.dp.CreateSession(sessionName); err != nil {
-		return p, fmt.Errorf("Cannot create job session '%s'", sessionName)
+		return p, fmt.Errorf("Cannot create job session '%s' for %s", sessionName, accountingID)
 	}
 	return p, nil
 }

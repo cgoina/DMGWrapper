@@ -74,8 +74,9 @@ func (sp SectionProcessor) Start(j process.Job) (process.Info, error) {
 		return nil, err
 	}
 	sj := process.Job{
-		Name:  j.Name,
-		JArgs: *sectionArgs,
+		Executable: sp.Resources.GetStringProperty("dmgexec"),
+		Name:       j.Name,
+		JArgs:      *sectionArgs,
 		CmdlineBuilder: SectionJobCmdlineBuilder{
 			Operation:            "dmgImage",
 			DMGProcessorType:     sp.DMGProcessorType,
@@ -110,6 +111,7 @@ type CoordInfo struct {
 // SectionJobCmdlineBuilder - command line builder for a section job
 type SectionJobCmdlineBuilder struct {
 	ClusterAccountID     string
+	SessionName          string
 	JobName              string
 	Operation            string
 	DMGProcessorType     string
@@ -129,6 +131,9 @@ func (sclb SectionJobCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error
 	if sclb.ClusterAccountID != "" {
 		cmdargs = arg.AddArgs(cmdargs, "-A", sclb.ClusterAccountID)
 	}
+	if sclb.SessionName != "" {
+		cmdargs = arg.AddArgs(cmdargs, "-sessionName", sclb.SessionName)
+	}
 	if sclb.JobName != "" {
 		cmdargs = arg.AddArgs(cmdargs, "-jobName", sclb.JobName)
 	}
@@ -136,6 +141,7 @@ func (sclb SectionJobCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error
 	if dmgAttrs.serverPort > 0 {
 		cmdargs = arg.AddArgs(cmdargs, "-serverPort", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
 	}
+	cmdargs = arg.AddArgs(cmdargs, "-config", dmgAttrs.Configs.String())
 	if dmgAttrs.sourcePixels != "" && dmgAttrs.sourceLabels != "" {
 		cmdargs = arg.AddArgs(cmdargs,
 			"-pixels", dmgAttrs.sourcePixels,
@@ -227,7 +233,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	width := pixelsGrid.maxCol - pixelsGrid.minCol
 	width = width + nSections - width%nSections
 	var minCol, maxCol int
-	if pixelsGrid.maxCol - width > 0 {
+	if pixelsGrid.maxCol-width > 0 {
 		maxCol = pixelsGrid.maxCol
 		minCol = maxCol - width
 	} else {

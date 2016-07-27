@@ -127,6 +127,9 @@ func (a *Attrs) validate() error {
 }
 
 func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
+	if a.Configs, err = ja.GetStringListArgValue("config"); err != nil {
+		return err
+	}
 	if a.serverAddress, err = ja.GetStringArgValue("serverAddress"); err != nil {
 		return err
 	}

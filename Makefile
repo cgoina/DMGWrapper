@@ -23,7 +23,7 @@ build: test
 	@go build process
 	@go build drmaautils
 	@go build dmg
-	@go build src/cmd/dmgservice.go
+	@go build -ldflags "-r ${DRMAA1_LIB_PATH}" src/cmd/dmgservice.go
 
 clean:
 	@rm -f dmgservice
