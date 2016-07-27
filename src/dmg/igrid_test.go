@@ -40,7 +40,7 @@ func TestSplitAndMerge(t *testing.T) {
 		t.Error("Unexpected error", err)
 		return
 	}
-	cropInfo := CropInfo{
+	coordInfo := CoordInfo{
 		MinCol: grid.minCol,
 		MaxCol: grid.maxCol + (grid.maxCol-grid.minCol)%nSections,
 		NCols:  grid.nCols,
@@ -49,12 +49,12 @@ func TestSplitAndMerge(t *testing.T) {
 		NRows:  grid.nRows,
 	}
 
-	croppedGrid := crop(grid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	croppedGrid := crop(grid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.MaxCol, coordInfo.MaxRow)
 	gridSections := splitGrid(croppedGrid, nSections)
 
 	mergedGrid := mergeSectionGrids(gridSections...)
 
-	uncroppedGrid := uncrop(mergedGrid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.NCols, cropInfo.NRows)
+	uncroppedGrid := uncrop(mergedGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.NCols, coordInfo.NRows)
 	if uncroppedGrid.nCols != grid.nCols ||
 		uncroppedGrid.nRows != grid.nRows ||
 		!reflect.DeepEqual(uncroppedGrid.tiles, grid.tiles) {

@@ -165,7 +165,6 @@ func createDMGService(operation string,
 			if err != nil {
 				return err
 			}
-
 			j := process.Job{
 				Name:  jobName,
 				JArgs: *sectionArgs,

@@ -13,8 +13,14 @@ import (
 	"config"
 )
 
-// CropInfo structure that holds cropping info for the original images
-type CropInfo struct {
+const (
+	cropPixelsExt    = ".crop.pixels"
+	cropLabelsExt    = ".crop.labels"
+	croppedResultExt = ".croppedResult.iGrid"
+)
+
+// CoordInfo structure that holds cropping info for the original images
+type CoordInfo struct {
 	InputPixelsName string `json:"pixels_in"`
 	InputLabelsName string `json:"labels_in"`
 	MinCol          int    `json:"offset_x_tiles"`
@@ -77,11 +83,25 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	labelsName := strings.TrimRight(filepath.Base(dmgAttrs.sourceLabels), ".iGrid")
 	nSections := dmgAttrs.nSections
 
-	cropInfo := CropInfo{
+	width := pixelsGrid.maxCol - pixelsGrid.minCol
+	if width < nSections {
+		width = nSections
+	} else if width%nSections != 0 {
+		width = width + nSections - width%nSections
+	}
+
+	maxCol := pixelsGrid.maxCol
+	minCol := maxCol - width
+	if minCol < 0 {
+		maxCol = maxCol - minCol
+		minCol = 0
+	}
+	fmt.Printf("Image grid bounds are: (%d, %d), (%d, %d)\n", minCol, pixelsGrid.minRow, maxCol, pixelsGrid.maxRow)
+	coordInfo := CoordInfo{
 		InputPixelsName: dmgAttrs.sourcePixels,
 		InputLabelsName: dmgAttrs.sourceLabels,
-		MinCol:          pixelsGrid.minCol,
-		MaxCol:          pixelsGrid.maxCol + (pixelsGrid.maxCol-pixelsGrid.minCol)%nSections,
+		MinCol:          minCol,
+		MaxCol:          maxCol,
 		NCols:           pixelsGrid.nCols,
 		MinRow:          pixelsGrid.minRow,
 		MaxRow:          pixelsGrid.maxRow,
@@ -92,7 +112,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	emptyLabels := resources.GetStringProperty("emptyLabelsTile")
 
 	// crop the pixels iGrid
-	croppedPixelsGrid := crop(pixelsGrid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	croppedPixelsGrid := crop(pixelsGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.MaxCol, coordInfo.MaxRow)
 	// save the cropped pixels iGrid
 	cpn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.pixels.iGrid", pixelsName))
 	if err := writeIGrid(cpn, croppedPixelsGrid, emptyPixels); err != nil {
@@ -102,7 +122,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	pixelSections := splitGrid(croppedPixelsGrid, nSections)
 
 	// crop the labels iGrid
-	croppedLabelsGrid := crop(labelsGrid, cropInfo.MinCol, cropInfo.MinRow, cropInfo.MaxCol, cropInfo.MaxRow)
+	croppedLabelsGrid := crop(labelsGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.MaxCol, coordInfo.MaxRow)
 	// save the cropped labels iGrid
 	cln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.labels.iGrid", labelsName))
 	if err := writeIGrid(cln, croppedLabelsGrid, emptyLabels); err != nil {
@@ -114,7 +134,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	var pixelsList, labelsList []string
 
 	for i, pg := range pixelSections {
-		pn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.pixels.%d.iGrid", pixelsName, i))
+		pn := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", pixelsName, cropPixelsExt, i))
 		if err := writeIGrid(pn, pg, emptyPixels); err != nil {
 			return nil, err
 		}
@@ -122,7 +142,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	}
 
 	for i, lg := range labelSections {
-		ln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.crop.labels.%d.iGrid", labelsName, i))
+		ln := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s.%d.iGrid", labelsName, cropLabelsExt, i))
 		if err := writeIGrid(ln, lg, emptyLabels); err != nil {
 			return nil, err
 		}
@@ -130,7 +150,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	}
 
 	coordFile := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s", dmgAttrs.coordFile))
-	coordJSON, err := json.Marshal(cropInfo)
+	coordJSON, err := json.Marshal(coordInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +158,7 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 		return nil, err
 	}
 
-	outputFileName := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s.iGrid", pixelsName))
+	outputFileName := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s%s", pixelsName, croppedResultExt))
 
 	sectionArgs.UpdateStringArg("pixels", "")
 	sectionArgs.UpdateStringArg("labels", "")
@@ -187,6 +207,64 @@ func writeIGrid(filename string, g *iGrid, emptyTileName string) error {
 
 // CreateSectionJobResults is responsible with merging and creating the final result
 func (s SectionHelper) CreateSectionJobResults(args *arg.Args, resources config.Config) error {
-	// TODO !!!!
+	var err error
+	var dmgAttrs Attrs
+
+	if err = dmgAttrs.extractDmgAttrs(args); err != nil {
+		return err
+	}
+
+	coordFile := filepath.Join(dmgAttrs.targetDir, fmt.Sprintf("%s", dmgAttrs.coordFile))
+	coordInfo, err := readCoordFile(coordFile)
+	if err != nil {
+		return err
+	}
+
+	resultGridFile := dmgAttrs.destImg
+	resultGrid, err := readIGrid(resultGridFile)
+	if err != nil {
+		return err
+	}
+
+	finalGrid := uncrop(resultGrid, coordInfo.MinCol, coordInfo.MinRow, coordInfo.NCols, coordInfo.NRows)
+
+	resultDir := filepath.Dir(resultGridFile)
+	resultBaseName := strings.Replace(filepath.Base(resultGridFile), croppedResultExt, "", -1)
+
+	// rename the tile image files to have the right col/row
+	for row := 0; row < finalGrid.nRows; row++ {
+		for col := 0; col < finalGrid.nCols; col++ {
+			oldTileName := finalGrid.getTile(col, row)
+			if oldTileName == "" {
+				continue
+			}
+			oldTileExt := filepath.Ext(oldTileName)
+			newTileName := filepath.Join(resultDir, fmt.Sprintf("%s.%d.%d%s", resultBaseName, col, row, oldTileExt))
+			if renameErr := os.Rename(oldTileName, newTileName); renameErr != nil {
+				log.Printf("Error trying to rename %s -> %s: %v", oldTileName, newTileName, renameErr)
+			}
+			finalGrid.setTile(col, row, newTileName)
+		}
+	}
+	finalResultGridFile := strings.Replace(resultGridFile, croppedResultExt, ".final.iGrid", -1)
+	emptyPixels := resources.GetStringProperty("emptyPixelsTile")
+	if err := writeIGrid(finalResultGridFile, finalGrid, emptyPixels); err != nil {
+		return err
+	}
 	return nil
+}
+
+func readCoordFile(coordFile string) (*CoordInfo, error) {
+	r, err := os.Open(coordFile)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening coordinates file %s: %v", coordFile, err)
+	}
+	defer r.Close()
+	coordDecoder := json.NewDecoder(r)
+
+	coordInfo := &CoordInfo{}
+	if err = coordDecoder.Decode(coordInfo); err != nil {
+		return nil, fmt.Errorf("Error reading coordinates from %s as JSON: %v", coordFile, err)
+	}
+	return coordInfo, nil
 }
