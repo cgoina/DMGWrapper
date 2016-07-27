@@ -1,6 +1,6 @@
 {
-    "dmgServer": "/Users/goinac/work/misc/image-processing/dmg-intensity-correction/Bin/Server",
-    "dmgClient": "/Users/goinac/work/misc/image-processing/dmg-intensity-correction/Bin/Client",
+    "dmgServer": "../dmg-intensity-correction/Bin/Server",
+    "dmgClient": "../dmg-intensity-correction/Bin/Client",
     "ugeQueue": "",
     "ugeResources": {
 	"sandy": "true"
