@@ -333,7 +333,7 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 	}
 	nImages := len(dmgAttrs.sourcePixelsList)
 	if nImages == 0 {
-		newJob, err := s.createJob(j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels)
+		newJob, err := s.createJob(j, 0, dmgAttrs.sourcePixels, dmgAttrs.sourceLabels, dmgAttrs.destImg)
 		if err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 		return nil
 	}
 	for i := 0; i < nImages; i++ {
-		newJob, err := s.createJob(j, i, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i])
+		newJob, err := s.createJob(j, i, dmgAttrs.sourcePixelsList[i], dmgAttrs.sourceLabelsList[i], dmgAttrs.destImg)
 		if err != nil {
 			return err
 		}
@@ -350,17 +350,22 @@ func (s imageBandSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 	return nil
 }
 
-func (s imageBandSplitter) createJob(j process.Job, jobIndex int, pixels, labels string) (process.Job, error) {
+func (s imageBandSplitter) createJob(j process.Job, jobIndex int, pixels, labels, outputImg string) (process.Job, error) {
 	if pixels == "" {
 		return j, fmt.Errorf("No source pixels has been defined")
 	}
 	if labels == "" {
 		return j, fmt.Errorf("No source labels has been defined")
 	}
+	if outputImg == "" {
+		return j, fmt.Errorf("No output image has been defined")
+	}
+	jobOutputImg := strings.Replace(outputImg, ".iGrid", fmt.Sprintf(".%d.iGrid", jobIndex), -1)
 	newJobArgs := j.JArgs.Clone()
 	newJobArgs.UpdateIntArg("clientIndex", jobIndex)
 	newJobArgs.UpdateStringArg("pixels", pixels)
 	newJobArgs.UpdateStringArg("labels", labels)
+	newJobArgs.UpdateStringArg("out", jobOutputImg)
 	return process.Job{
 		Executable:     j.Executable,
 		Name:           fmt.Sprintf("%s_%d", j.Name, jobIndex),

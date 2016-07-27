@@ -3,14 +3,17 @@ package dmg
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"arg"
 	"config"
+	"process"
 )
 
 const (
@@ -18,6 +21,76 @@ const (
 	cropLabelsExt    = ".crop.labels"
 	croppedResultExt = ".croppedResult.iGrid"
 )
+
+// dmgSectionJobInfo DMG section job info
+type dmgSectionJobInfo struct {
+	dmgProcessInfo process.Info
+	sectionArgs    *arg.Args
+	resources      config.Config
+}
+
+// JobStdout job's standard output
+func (sj dmgSectionJobInfo) JobStdout() (io.ReadCloser, error) {
+	return os.Stdout, nil
+}
+
+// JobStderr job's standard error
+func (sj dmgSectionJobInfo) JobStderr() (io.ReadCloser, error) {
+	return os.Stderr, nil
+}
+
+// WaitForTermination wait for job's completion
+func (sj dmgSectionJobInfo) WaitForTermination() error {
+	var sectionHelper SectionHelper
+	if err := sectionHelper.CreateSectionJobResults(sj.sectionArgs, sj.resources); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DMGSectionProcessor - section processor
+type DMGSectionProcessor struct {
+	process.JobWatcher
+	ImageProcessor   process.Processor
+	Resources        config.Config
+	DMGProcessorType string
+}
+
+// Run the given job
+func (sp DMGSectionProcessor) Run(j process.Job) error {
+	ji, err := sp.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return sp.Wait(ji)
+}
+
+// Start launches the server
+func (sp DMGSectionProcessor) Start(j process.Job) (process.Info, error) {
+	var sectionHelper SectionHelper
+	sectionArgs, err := sectionHelper.PrepareSectionJobArgs(&j.JArgs, sp.Resources)
+	if err != nil {
+		return nil, err
+	}
+	sj := process.Job{
+		Name:  j.Name,
+		JArgs: *sectionArgs,
+		CmdlineBuilder: SectionJobCmdlineBuilder{
+			Operation:            "dmgImage",
+			DMGProcessorType:     sp.DMGProcessorType,
+			SectionProcessorType: "local",
+		},
+	}
+	dmgProcessInfo, err := sp.ImageProcessor.Start(sj)
+	if err != nil {
+		return nil, err
+	}
+	return dmgSectionJobInfo{
+		dmgProcessInfo: dmgProcessInfo,
+		sectionArgs:    sectionArgs,
+		resources:      sp.Resources,
+	}, nil
+}
 
 // CoordInfo structure that holds cropping info for the original images
 type CoordInfo struct {
@@ -31,6 +104,68 @@ type CoordInfo struct {
 	NRows           int    `json:"original_y_tiles"`
 	TileWidth       int    `json:"tile_size_x"`
 	TileHeight      int    `json:"tile_size_y"`
+}
+
+// SectionJobCmdlineBuilder - command line builder for a section job
+type SectionJobCmdlineBuilder struct {
+	ClusterAccountID     string
+	JobName              string
+	Operation            string
+	DMGProcessorType     string
+	SectionProcessorType string
+}
+
+// GetCmdlineArgs section command line builder method
+func (sclb SectionJobCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
+	var cmdargs []string
+	var err error
+	var dmgAttrs Attrs
+
+	if err = dmgAttrs.extractDmgAttrs(&a); err != nil {
+		return cmdargs, err
+	}
+	cmdargs = arg.AddArgs(cmdargs, "-dmgProcessor", sclb.DMGProcessorType, "-sectionProcessor", sclb.SectionProcessorType)
+	if sclb.ClusterAccountID != "" {
+		cmdargs = arg.AddArgs(cmdargs, "-A", sclb.ClusterAccountID)
+	}
+	if sclb.JobName != "" {
+		cmdargs = arg.AddArgs(cmdargs, "-jobName", sclb.JobName)
+	}
+	cmdargs = arg.AddArgs(cmdargs, sclb.Operation)
+	if dmgAttrs.serverPort > 0 {
+		cmdargs = arg.AddArgs(cmdargs, "-serverPort", strconv.FormatInt(int64(dmgAttrs.serverPort), 10))
+	}
+	if dmgAttrs.sourcePixels != "" && dmgAttrs.sourceLabels != "" {
+		cmdargs = arg.AddArgs(cmdargs, "-pixels", dmgAttrs.sourcePixels, "-labels", dmgAttrs.sourceLabels)
+	}
+	if len(dmgAttrs.sourcePixelsList) > 0 && len(dmgAttrs.sourceLabelsList) > 0 {
+		cmdargs = arg.AddArgs(cmdargs, "-pixelsList", dmgAttrs.sourcePixelsList.String())
+	}
+	cmdargs = arg.AddArgs(cmdargs, "-labelsList", dmgAttrs.sourceLabelsList.String())
+	cmdargs = arg.AddArgs(cmdargs, "-temp", dmgAttrs.scratchDir, "-targetDir", dmgAttrs.targetDir, "-out", dmgAttrs.destImg)
+	cmdargs = arg.AddArgs(cmdargs,
+		"-threads", strconv.FormatInt(int64(dmgAttrs.nThreads), 10),
+		"-sections", strconv.FormatInt(int64(dmgAttrs.nSections), 10),
+		"-iters", strconv.FormatInt(int64(dmgAttrs.iterations), 10),
+		"-vCycles", strconv.FormatInt(int64(dmgAttrs.vCycles), 10),
+		"-iWeight", strconv.FormatFloat(dmgAttrs.iWeight, 'g', -1, 64),
+		"-gWeight", strconv.FormatFloat(dmgAttrs.gWeight, 'g', -1, 64),
+		"-gScale", strconv.FormatFloat(dmgAttrs.gScale, 'g', -1, 64))
+	cmdargs = arg.AddArgs(cmdargs, "-tileExt", dmgAttrs.tileExt)
+	cmdargs = arg.AddArgs(cmdargs, "-tileWidth", strconv.FormatInt(int64(dmgAttrs.tileWidth), 10))
+	cmdargs = arg.AddArgs(cmdargs, "-tileHeight", strconv.FormatInt(int64(dmgAttrs.tileHeight), 10))
+
+	if dmgAttrs.verbose {
+		cmdargs = arg.AddArgs(cmdargs, "-verbose")
+	}
+	if dmgAttrs.gray {
+		cmdargs = arg.AddArgs(cmdargs, "-gray")
+	}
+	if dmgAttrs.deramp {
+		cmdargs = arg.AddArgs(cmdargs, "-deramp")
+	}
+	return cmdargs, nil
+
 }
 
 // SectionHelper is an object that can be used for preparing the job arguments for a section
@@ -84,18 +219,9 @@ func (s SectionHelper) PrepareSectionJobArgs(args *arg.Args, resources config.Co
 	nSections := dmgAttrs.nSections
 
 	width := pixelsGrid.maxCol - pixelsGrid.minCol
-	if width < nSections {
-		width = nSections
-	} else if width%nSections != 0 {
-		width = width + nSections - width%nSections
-	}
-
-	maxCol := pixelsGrid.maxCol
-	minCol := maxCol - width
-	if minCol < 0 {
-		maxCol = maxCol - minCol
-		minCol = 0
-	}
+	width = width + nSections - width%nSections
+	minCol := pixelsGrid.minCol
+	maxCol := minCol + width
 	fmt.Printf("Image grid bounds are: (%d, %d), (%d, %d)\n", minCol, pixelsGrid.minRow, maxCol, pixelsGrid.maxRow)
 	coordInfo := CoordInfo{
 		InputPixelsName: dmgAttrs.sourcePixels,

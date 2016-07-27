@@ -15,12 +15,13 @@ import (
 )
 
 var (
-	sessionName      string
-	jobName          string
-	accountingID     string
-	destroySession   bool
-	dmgProcessorType string
-	helpFlag         bool
+	sessionName          string
+	jobName              string
+	accountingID         string
+	destroySession       bool
+	dmgProcessorType     string
+	sectionProcessorType string
+	helpFlag             bool
 )
 
 type serviceFunc func() error
@@ -93,11 +94,12 @@ func registerArgs() (fs *flag.FlagSet) {
 	fs = flag.NewFlagSet("submitJobs", flag.ContinueOnError)
 	fs.SetOutput(ioutil.Discard)
 
-	fs.StringVar(&sessionName, "sessionName", "mipmaps", "Grid job session name")
-	fs.StringVar(&jobName, "jobName", "mipmaps", "Job name")
+	fs.StringVar(&sessionName, "sessionName", "dmg", "Grid job session name")
+	fs.StringVar(&jobName, "jobName", "dmg", "Job name")
 	fs.StringVar(&accountingID, "A", "", "Grid account id")
 	fs.BoolVar(&destroySession, "destroySession", false, "If true it destroyes the session when it's done if no errors have been encountered")
-	fs.StringVar(&dmgProcessorType, "dmgProcessor", "drmaa1", "Job processor type {local, drmaa1, drmaa2}")
+	fs.StringVar(&dmgProcessorType, "dmgProcessor", "drmaa1", "Job processor type {echo, local, drmaa1, drmaa2}")
+	fs.StringVar(&sectionProcessorType, "sectionProcessor", "drmaa1", "Job processor type {echo, local, drmaa1, drmaa2}")
 	fs.BoolVar(&helpFlag, "h", false, "Display command line usage flags")
 	return fs
 }
@@ -107,30 +109,6 @@ func printDefaults(fs ...*flag.FlagSet) {
 		f.SetOutput(nil)
 		f.PrintDefaults()
 	}
-}
-
-func createDMGProcessor(resources config.Config) (process.Processor, error) {
-	var dmgProcessor process.Processor
-	var err error
-	switch dmgProcessorType {
-	case "echo":
-		dmgProcessor = process.NewEchoProcessor()
-	case "local":
-		dmgProcessor = &dmg.LocalDmgProcessor{Resources: resources}
-	case "drmaa1":
-		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
-			accountingID,
-			drmaautils.NewDRMAAV1Proxy(),
-			resources)
-	case "drmaa2":
-		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
-			accountingID,
-			drmaautils.NewDRMAAV2Proxy(),
-			resources)
-	default:
-		err = fmt.Errorf("Invalid DMG processor type: %s", dmgProcessorType)
-	}
-	return dmgProcessor, err
 }
 
 func createDMGService(operation string,
@@ -160,25 +138,79 @@ func createDMGService(operation string,
 
 	case "dmgSection":
 		return serviceFunc(func() error {
-			var sectionHelper dmg.SectionHelper
-			sectionArgs, err := sectionHelper.PrepareSectionJobArgs(args, resources)
+			sectionProcessor, err := createSectionProcessor(bandsProcessor, resources)
 			if err != nil {
 				return err
 			}
 			j := process.Job{
-				Name:  jobName,
-				JArgs: *sectionArgs,
+				Executable: "./dmgservice",
+				Name:       jobName,
+				JArgs:      *args,
+				CmdlineBuilder: dmg.SectionJobCmdlineBuilder{
+					Operation:            "dmgSection",
+					DMGProcessorType:     dmgProcessorType,
+					SectionProcessorType: sectionProcessorType,
+					ClusterAccountID:     accountingID,
+					JobName:              fmt.Sprintf("%s-section", jobName),
+				},
 			}
-			if err := bandsProcessor.Run(j); err != nil {
-				return err
-			}
-			if err := sectionHelper.CreateSectionJobResults(sectionArgs, resources); err != nil {
-				return err
-			}
+			return sectionProcessor.Run(j)
 			return nil
 		}), nil
 	default:
 		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection}",
 			dmgProcessorType)
 	}
+}
+
+func createDMGProcessor(resources config.Config) (process.Processor, error) {
+	var dmgProcessor process.Processor
+	var err error
+	switch dmgProcessorType {
+	case "echo":
+		dmgProcessor = process.NewEchoProcessor()
+	case "local":
+		dmgProcessor = &dmg.LocalDmgProcessor{Resources: resources}
+	case "drmaa1":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV1Proxy(),
+			resources)
+	case "drmaa2":
+		dmgProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV2Proxy(),
+			resources)
+	default:
+		err = fmt.Errorf("Invalid DMG processor type: %s", dmgProcessorType)
+	}
+	return dmgProcessor, err
+}
+
+func createSectionProcessor(imageProcessor process.Processor, resources config.Config) (process.Processor, error) {
+	var sectionProcessor process.Processor
+	var err error
+	switch sectionProcessorType {
+	case "echo":
+		sectionProcessor = process.NewEchoProcessor()
+	case "local":
+		sectionProcessor = &dmg.DMGSectionProcessor{
+			ImageProcessor:   imageProcessor,
+			Resources:        resources,
+			DMGProcessorType: dmgProcessorType,
+		}
+	case "drmaa1":
+		sectionProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV1Proxy(),
+			resources)
+	case "drmaa2":
+		sectionProcessor, err = drmaautils.NewGridProcessor(sessionName,
+			accountingID,
+			drmaautils.NewDRMAAV2Proxy(),
+			resources)
+	default:
+		err = fmt.Errorf("Invalid section processor type: %s", dmgProcessorType)
+	}
+	return sectionProcessor, err
 }
