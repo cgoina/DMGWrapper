@@ -145,14 +145,18 @@ func (sclb SectionJobCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error
 	if dmgAttrs.sourcePixels != "" && dmgAttrs.sourceLabels != "" {
 		cmdargs = arg.AddArgs(cmdargs,
 			"-pixels", dmgAttrs.sourcePixels,
-			"-labels", dmgAttrs.sourceLabels,
-			"-out", dmgAttrs.destImg)
+			"-labels", dmgAttrs.sourceLabels)
+	}
+	if dmgAttrs.destImg != "" {
+		cmdargs = arg.AddArgs(cmdargs, "-out", dmgAttrs.destImg)
 	}
 	if len(dmgAttrs.sourcePixelsList) > 0 && len(dmgAttrs.sourceLabelsList) > 0 {
 		cmdargs = arg.AddArgs(cmdargs,
 			"-pixelsList", dmgAttrs.sourcePixelsList.String(),
-			"-labelsList", dmgAttrs.sourceLabelsList.String(),
-			"-outList", dmgAttrs.destImgList.String())
+			"-labelsList", dmgAttrs.sourceLabelsList.String())
+	}
+	if len(dmgAttrs.destImgList) > 0 {
+		cmdargs = arg.AddArgs(cmdargs, "-outList", dmgAttrs.destImgList.String())
 	}
 	cmdargs = arg.AddArgs(cmdargs, "-temp", dmgAttrs.scratchDir, "-targetDir", dmgAttrs.targetDir)
 	cmdargs = arg.AddArgs(cmdargs,
