@@ -117,8 +117,9 @@ func createDMGService(operation string,
 	resources config.Config) (serviceFunc, error) {
 	var err error
 	dmgProcessor, err := createProcessor(dmgProcessorType,
+		sessionName,
 		func() process.Processor {
-			return &dmg.LocalDmgProcessor{Resources: resources}
+			return process.NewLocalCmdProcessor(resources)
 		},
 		resources)
 	if err != nil {
@@ -139,10 +140,10 @@ func createDMGService(operation string,
 			}
 			return bandsProcessor.Run(j)
 		}), nil
-
 	case "dmgSection":
 		return serviceFunc(func() error {
 			sectionProcessor, err := createProcessor(sectionProcessorType,
+				sessionName,
 				func() process.Processor {
 					return &dmg.SectionProcessor{
 						ImageProcessor:   bandsProcessor,
@@ -175,7 +176,7 @@ func createDMGService(operation string,
 	}
 }
 
-func createProcessor(processorType string,
+func createProcessor(processorType, sName string,
 	localProcessorCtor func() process.Processor,
 	resources config.Config) (process.Processor, error) {
 	var p process.Processor
@@ -186,12 +187,12 @@ func createProcessor(processorType string,
 	case "local":
 		p = localProcessorCtor()
 	case "drmaa1":
-		p, err = drmaautils.NewGridProcessor(sessionName,
+		p, err = drmaautils.NewGridProcessor(sName,
 			accountingID,
 			drmaautils.NewDRMAAV1Proxy(),
 			resources)
 	case "drmaa2":
-		p, err = drmaautils.NewGridProcessor(sessionName,
+		p, err = drmaautils.NewGridProcessor(sName,
 			accountingID,
 			drmaautils.NewDRMAAV2Proxy(),
 			resources)

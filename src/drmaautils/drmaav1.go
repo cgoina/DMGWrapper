@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dgruber/drmaa"
+	"log"
 	"os"
 	"strconv"
 )
@@ -22,15 +23,29 @@ func NewDRMAAV1Proxy() DRMAAProxy {
 	return &DRMAAV1Proxy{}
 }
 
+var drmaaV1Session DRMAASession
+
 // CreateSession DRMAAProxy method
 func (d1p *DRMAAV1Proxy) CreateSession(name string) (DRMAASession, error) {
 	var js drmaa.Session
 	var err error
 
-	if js, err = drmaa.MakeSession(); err != nil {
-		return nil, fmt.Errorf("Could not open DRMAA v1 session: %v", err)
+	if drmaaV1Session != nil {
+		return drmaaV1Session, nil
 	}
-	return &DRMAAV1Session{&js}, nil
+	sessionName := "session=" + name
+	if err = js.Init(sessionName); err != nil {
+		drmaaErr := err.(*drmaa.Error)
+		switch drmaaErr.ID {
+		case drmaa.AlreadyActiveSession:
+			log.Printf("A DRMAA session is already active, continue using the current session")
+			break
+		default:
+			return nil, fmt.Errorf("Could not open DRMAA v1 session: %v:%v", drmaaErr.ID, err)
+		}
+	}
+	drmaaV1Session = &DRMAAV1Session{&js}
+	return drmaaV1Session, nil
 }
 
 // RunJob DRMAASession method
@@ -152,9 +167,13 @@ func appendResourceLimits(buf *bytes.Buffer, jt JobTemplate) {
 	buf.WriteString(" ")
 }
 
-// Close DRMAASession method
+// Close DRMAASession method. So far it has not been an issue with multiple proxies closing the session
+// while it's being used by another proxy. If this happens we need some counter to track the number of times
+// the session is "created"
 func (d1s *DRMAAV1Session) Close() error {
-	return nil
+	err := d1s.js.Exit()
+	drmaaV1Session = nil
+	return err
 }
 
 // UpdateJobInfo DRMAASession method

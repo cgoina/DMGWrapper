@@ -58,8 +58,8 @@ func NewArgs(flagsCtor FlagsCtor) *Args {
 // Clone - clones the current arguments
 func (a *Args) Clone() Args {
 	cloneArgs := Args{
-		Flags:  a.Flags,
-		config: a.config,
+		Flags:       a.Flags,
+		config:      a.config,
 		changedArgs: make(map[string]interface{}),
 	}
 	for k, v := range a.changedArgs {
@@ -94,7 +94,7 @@ func (a Args) GetBoolArgValue(name string) (bool, error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("GetBoolArgValue error: %v", r)
+			err = fmt.Errorf("GetBoolArgValue %s error: %v", name, r)
 		}
 	}()
 	return v.(bool), nil
@@ -108,7 +108,7 @@ func (a Args) GetFloat64ArgValue(name string) (float64, error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("GetIntArgValue error: %v", r)
+			err = fmt.Errorf("GetIntArgValue %s error: %v", name, r)
 		}
 	}()
 	return v.(float64), nil
@@ -122,10 +122,38 @@ func (a Args) GetIntArgValue(name string) (int, error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("GetIntArgValue error: %v", r)
+			err = fmt.Errorf("GetIntArgValue %s error: %v", name, r)
 		}
 	}()
 	return v.(int), nil
+}
+
+// GetInt64ArgValue retrieve argument's value as an int64
+func (a Args) GetInt64ArgValue(name string) (int64, error) {
+	v, err := a.GetArgValue(name)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("GetInt64ArgValue %s error: %v", name, r)
+		}
+	}()
+	return v.(int64), nil
+}
+
+// GetUintArgValue retrieve argument's value as an uint
+func (a Args) GetUintArgValue(name string) (uint, error) {
+	v, err := a.GetArgValue(name)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("GetUintArgValue %s error: %v", name, r)
+		}
+	}()
+	return v.(uint), nil
 }
 
 // GetStringArgValue retrieve argument's value as a string
@@ -136,7 +164,7 @@ func (a Args) GetStringArgValue(name string) (string, error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("GetStringArgValue error: %v", r)
+			err = fmt.Errorf("GetStringArgValue %s error: %v", name, r)
 		}
 	}()
 	return v.(string), nil
@@ -150,7 +178,7 @@ func (a Args) GetStringListArgValue(name string) ([]string, error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("GetStringListArgValue error: %v", r)
+			err = fmt.Errorf("GetStringListArgValue %s error: %v", name, r)
 		}
 	}()
 	return v.([]string), nil
@@ -158,6 +186,16 @@ func (a Args) GetStringListArgValue(name string) ([]string, error) {
 
 // UpdateIntArg set the int value for the named argument
 func (a *Args) UpdateIntArg(name string, value int) {
+	a.changedArgs[name] = value
+}
+
+// UpdateInt64Arg set the int64 value for the named argument
+func (a *Args) UpdateInt64Arg(name string, value int64) {
+	a.changedArgs[name] = value
+}
+
+// UpdateUintArg set the uint value for the named argument
+func (a *Args) UpdateUintArg(name string, value uint) {
 	a.changedArgs[name] = value
 }
 
@@ -203,6 +241,15 @@ func AddIntArg(arglist []string, name string, value int64, separator string) []s
 	return arglist
 }
 
+// AddUintArg add an uint argument to the arglist
+func AddUintArg(arglist []string, name string, value uint64, separator string) []string {
+	if value >= 0 {
+		newarglist := append(arglist, argFrom(name, strconv.FormatUint(value, 10), separator))
+		return newarglist
+	}
+	return arglist
+}
+
 // AddFloatArg add a float argument to the arglist
 func AddFloatArg(arglist []string, name string, value float64, prec, bitSize int, separator string) []string {
 	if value > 0 {
@@ -214,6 +261,14 @@ func AddFloatArg(arglist []string, name string, value float64, prec, bitSize int
 
 func argFrom(name, value, separator string) string {
 	return name + separator + value
+}
+
+// DefaultIfEmpty returns the val if non empty otherwise it returns the default value
+func DefaultIfEmpty(val, defaultVal string) string {
+	if val == "" {
+		return defaultVal
+	}
+	return val
 }
 
 // CmdlineArgBuilder creates command line arguments

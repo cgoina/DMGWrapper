@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -21,67 +20,6 @@ const (
 	maxChecks               = 100
 	serverAddressPrefix     = "Server Address: "
 )
-
-// localCmdInfo local process info
-type localCmdInfo struct {
-	cmd       *exec.Cmd
-	jobStdout io.ReadCloser
-	jobStderr io.ReadCloser
-}
-
-func (lci *localCmdInfo) JobStdout() (io.ReadCloser, error) {
-	return lci.jobStdout, nil
-}
-
-func (lci *localCmdInfo) JobStderr() (io.ReadCloser, error) {
-	return lci.jobStderr, nil
-}
-
-func (lci *localCmdInfo) WaitForTermination() error {
-	var donech chan struct{}
-	var done struct{}
-	donech = make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-time.After(500 * time.Millisecond):
-				lci.readOutput()
-			case <-donech:
-				lci.readOutput()
-				return
-			}
-		}
-	}()
-	lci.readOutput()
-	err := lci.cmd.Wait()
-	donech <- done
-	return err
-}
-
-func (lci *localCmdInfo) readOutput() {
-	io.Copy(os.Stdout, lci.jobStdout)
-	io.Copy(os.Stderr, lci.jobStderr)
-}
-
-// LocalDmgProcessor - in charge with starting a DMG Server process
-type LocalDmgProcessor struct {
-	process.JobWatcher
-	Resources config.Config
-}
-
-// Run the given job
-func (lp LocalDmgProcessor) Run(j process.Job) error {
-	ji, err := lp.Start(j)
-	if err != nil {
-		return fmt.Errorf("Error starting %v: %v", j, err)
-	}
-	return lp.Wait(ji)
-}
-
-// Start launches the server
-func (lp LocalDmgProcessor) Start(j process.Job) (process.Info, error) {
-	return processJob(j)
-}
 
 // serverCmdlineBuilder - DMG server command line builder
 type serverCmdlineBuilder struct {
@@ -151,30 +89,6 @@ func (sclb clientCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	cmdargs = arg.AddArgs(cmdargs, "--out", dmgAttrs.destImg)
 	cmdargs = arg.AddArgs(cmdargs, "--temp", dmgAttrs.scratchDir)
 	return cmdargs, nil
-}
-
-func processJob(j process.Job) (process.Info, error) {
-	cmdargs, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
-	if err != nil {
-		return nil, fmt.Errorf("Error preparing the command line arguments: %v", err)
-	}
-	cmd := exec.Command(j.Executable, cmdargs...)
-	log.Printf("Execute %v\n", cmd)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("Error opening the command stdout: %v", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("Error opening the command stderr: %v", err)
-	}
-	lci := &localCmdInfo{
-		cmd:       cmd,
-		jobStdout: stdout,
-		jobStderr: stderr,
-	}
-	err = cmd.Start()
-	return lci, err
 }
 
 // imageBandsProcessingInfo job info related to processing

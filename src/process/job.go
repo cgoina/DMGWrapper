@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
+	"time"
 
 	"arg"
 	"config"
@@ -97,6 +99,93 @@ func (p *echoProcessor) Start(j Job) (Info, error) {
 	fmt.Printf("Execute %v %v %v\n", j.Name, j.Executable, cmdline)
 
 	return echoJobInfo{}, nil
+}
+
+// localCmdInfo local process info
+type localCmdInfo struct {
+	cmd       *exec.Cmd
+	jobStdout io.ReadCloser
+	jobStderr io.ReadCloser
+}
+
+func (lci *localCmdInfo) JobStdout() (io.ReadCloser, error) {
+	return lci.jobStdout, nil
+}
+
+func (lci *localCmdInfo) JobStderr() (io.ReadCloser, error) {
+	return lci.jobStderr, nil
+}
+
+func (lci *localCmdInfo) WaitForTermination() error {
+	var donech chan struct{}
+	var done struct{}
+	donech = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-time.After(500 * time.Millisecond):
+				lci.readOutput()
+			case <-donech:
+				lci.readOutput()
+				return
+			}
+		}
+	}()
+	lci.readOutput()
+	err := lci.cmd.Wait()
+	donech <- done
+	return err
+}
+
+func (lci *localCmdInfo) readOutput() {
+	io.Copy(os.Stdout, lci.jobStdout)
+	io.Copy(os.Stderr, lci.jobStderr)
+}
+
+// localCmdProcessor - local command processor
+type localCmdProcessor struct {
+	JobWatcher
+	Resources config.Config
+}
+
+// NewLocalCmdProcessor creates a local command job processor that processes the job on the current machine
+// by creating and calling the corresponding command.
+func NewLocalCmdProcessor(resources config.Config) Processor {
+	return &localCmdProcessor{Resources: resources}
+}
+
+// Run the given job
+func (p *localCmdProcessor) Run(j Job) error {
+	ji, err := p.Start(j)
+	if err != nil {
+		return fmt.Errorf("Error starting %v: %v", j, err)
+	}
+	return p.Wait(ji)
+}
+
+// Start launches the server
+func (p *localCmdProcessor) Start(j Job) (Info, error) {
+	cmdargs, err := j.CmdlineBuilder.GetCmdlineArgs(j.JArgs)
+	if err != nil {
+		return nil, fmt.Errorf("Error preparing the command line arguments: %v", err)
+	}
+	cmd := exec.Command(j.Executable, cmdargs...)
+	log.Printf("Execute %v\n", cmd)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("Error opening the command stdout: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("Error opening the command stderr: %v", err)
+	}
+	lci := &localCmdInfo{
+		cmd:       cmd,
+		jobStdout: stdout,
+		jobStderr: stderr,
+	}
+	err = cmd.Start()
+	return lci, err
 }
 
 // parallelProcessor is responsible with splitting a job into multiple smaller jobs

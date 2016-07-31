@@ -126,6 +126,7 @@ func (a *Attrs) validate() error {
 	return nil
 }
 
+// extractDmgAttrs populates dmg attributes from command line flags
 func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
 	if a.Configs, err = ja.GetStringListArgValue("config"); err != nil {
 		return err
