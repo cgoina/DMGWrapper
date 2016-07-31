@@ -55,6 +55,14 @@ func NewArgs(flagsCtor FlagsCtor) *Args {
 	return args
 }
 
+// PrintDefaults print the command line options
+func PrintDefaults(fs ...*flag.FlagSet) {
+	for _, f := range fs {
+		f.SetOutput(nil)
+		f.PrintDefaults()
+	}
+}
+
 // Clone - clones the current arguments
 func (a *Args) Clone() Args {
 	cloneArgs := Args{

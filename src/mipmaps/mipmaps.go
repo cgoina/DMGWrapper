@@ -11,13 +11,19 @@ import (
 	"process"
 )
 
-// retileCmdlineBuilder retiler command line builder
-type retileCmdlineBuilder struct {
-	baseMipmapsCmdlineBuilder
+// localRetileCmdlineBuilder retiler command line builder
+type localRetileCmdlineBuilder struct {
+	resources   config.Config
+	dvidProxies DVIDProxyURLMapping
+}
+
+// NewLocalRetileCmdlineBuilder creates a command line builder for a local retile job
+func NewLocalRetileCmdlineBuilder(resources config.Config, dvidProxies DVIDProxyURLMapping) arg.CmdlineArgBuilder {
+	return localRetileCmdlineBuilder{resources, dvidProxies}
 }
 
 // GetCmdlineArgs creates command line arguments for retiling
-func (clb retileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
+func (clb localRetileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var mipmapsAttrs Attrs
@@ -25,7 +31,7 @@ func (clb retileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	if err = mipmapsAttrs.extractMipmapsAttrs(&a); err != nil {
 		return cmdargs, err
 	}
-	cmdargs = clb.setJvmMemory(cmdargs, clb.resources.GetStringProperty("tilingMemory"))
+	cmdargs = setJvmMemory(cmdargs, clb.resources.GetStringProperty("tilingMemory"))
 	cmdargs = arg.AddIntArg(cmdargs, "-DtileCacheSize", clb.resources.GetInt64Property("tilerCacheSize"), "=")
 
 	sourceCTStackFormat := toCatmaidToolsStackFmt(mipmapsAttrs.sourceStackFormat, map[string]string{
@@ -40,7 +46,7 @@ func (clb retileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 		"{tile_width}":   strconv.FormatInt(mipmapsAttrs.sourceTileWidth, 10),
 		"{tile:_height}": strconv.FormatInt(mipmapsAttrs.sourceTileHeight, 10),
 	})
-	cmdargs = arg.AddArg(cmdargs, "-DsourceUrlFormat", makeURL(clb.formatRootURL(mipmapsAttrs.sourceRootURL), sourceCTStackFormat), "=")
+	cmdargs = arg.AddArg(cmdargs, "-DsourceUrlFormat", makeURL(clb.dvidProxies.formatRootURL(mipmapsAttrs.sourceRootURL), sourceCTStackFormat), "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceWidth", mipmapsAttrs.totalVolume.dx, "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceHeight", mipmapsAttrs.totalVolume.dy, "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceDepth", mipmapsAttrs.totalVolume.dz, "=")
@@ -56,7 +62,7 @@ func (clb retileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	cmdargs = arg.AddIntArg(cmdargs, "-Dheight", mipmapsAttrs.sourceVolume.dy, "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-Ddepth", mipmapsAttrs.sourceVolume.dz, "=")
 
-	cmdargs = arg.AddArg(cmdargs, "-DexportBasePath", clb.formatRootURL(mipmapsAttrs.targetRootURL), "=")
+	cmdargs = arg.AddArg(cmdargs, "-DexportBasePath", clb.dvidProxies.formatRootURL(mipmapsAttrs.targetRootURL), "=")
 	targetCTStackFormat := toCatmaidToolsStackFmt(mipmapsAttrs.targetStackFormat, map[string]string{
 		"{plane}":        mipmapsAttrs.targetOrientation.String(),
 		"{scale}":        arg.DefaultIfEmpty(mipmapsAttrs.targetScaleFmt, "%1$d"),
@@ -93,13 +99,19 @@ func (clb retileCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	return cmdargs, nil
 }
 
-// scaleCmdlineBuilder scaler command line builder
-type scaleCmdlineBuilder struct {
-	baseMipmapsCmdlineBuilder
+// localScaleCmdlineBuilder scaler command line builder
+type localScaleCmdlineBuilder struct {
+	resources   config.Config
+	dvidProxies DVIDProxyURLMapping
+}
+
+// NewLocalScaleCmdlineBuilder creates a command line builder for a local retile job
+func NewLocalScaleCmdlineBuilder(resources config.Config, dvidProxies DVIDProxyURLMapping) arg.CmdlineArgBuilder {
+	return localScaleCmdlineBuilder{resources, dvidProxies}
 }
 
 // GetCmdlineArgs creates command line arguments for retiling
-func (clb scaleCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
+func (clb localScaleCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	var cmdargs []string
 	var err error
 	var mipmapsAttrs Attrs
@@ -107,7 +119,7 @@ func (clb scaleCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	if err = mipmapsAttrs.extractMipmapsAttrs(&a); err != nil {
 		return cmdargs, err
 	}
-	cmdargs = clb.setJvmMemory(cmdargs, clb.resources.GetStringProperty("scalingMemory"))
+	cmdargs = setJvmMemory(cmdargs, clb.resources.GetStringProperty("scalingMemory"))
 	tileCTStackFormat := toCatmaidToolsStackFmt(mipmapsAttrs.targetStackFormat, map[string]string{
 		"{plane}":        mipmapsAttrs.targetOrientation.String(),
 		"{scale}":        arg.DefaultIfEmpty(mipmapsAttrs.targetScaleFmt, "%1$d"),
@@ -120,7 +132,7 @@ func (clb scaleCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 		"{tile_width}":   strconv.FormatInt(mipmapsAttrs.targetTileWidth, 10),
 		"{tile:_height}": strconv.FormatInt(mipmapsAttrs.targetTileHeight, 10),
 	})
-        cmdargs = arg.AddArg(cmdargs, "-DtileFormat", makeURL(clb.formatRootURL(mipmapsAttrs.targetRootURL), tileCTStackFormat), "=")
+	cmdargs = arg.AddArg(cmdargs, "-DtileFormat", makeURL(clb.dvidProxies.formatRootURL(mipmapsAttrs.targetRootURL), tileCTStackFormat), "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceWidth", mipmapsAttrs.totalVolume.dx, "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceHeight", mipmapsAttrs.totalVolume.dy, "=")
 	cmdargs = arg.AddIntArg(cmdargs, "-DsourceDepth", mipmapsAttrs.totalVolume.dz, "=")
@@ -145,43 +157,47 @@ func (clb scaleCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
 	return cmdargs, nil
 }
 
-type baseMipmapsCmdlineBuilder struct {
-	resources   config.Config
-	dvidProxies map[string]string
+type serviceCmdlineBuilder struct {
+	processorType string
+	operation     string
+	resources     config.Config
 }
 
-func (clb baseMipmapsCmdlineBuilder) setJvmMemory(cmdargs []string, jvmMemory string) []string {
-	if jvmMemory != "" {
-		cmdargs = arg.AddArg(cmdargs, "-Xms", jvmMemory, "")
-		cmdargs = arg.AddArg(cmdargs, "-Xms", jvmMemory, "")
+// NewServiceCmdlineBuilder creates a command line builder for a mipmaps service
+func NewServiceCmdlineBuilder(processorType, operation string, resources config.Config) (arg.CmdlineArgBuilder, error) {
+	switch operation {
+	case "retile", "scale":
+	default:
+		return nil, fmt.Errorf("Invalid operation - ServiceCmdlineBuilder supports only retile and scale")
 	}
-	return cmdargs
+	return serviceCmdlineBuilder{
+		processorType: processorType,
+		operation:     operation,
+		resources:     resources,
+	}, nil
 }
 
-func (clb baseMipmapsCmdlineBuilder) formatRootURL(url string) string {
-	if strings.HasPrefix(url, "dvid://") {
-		dvidInstance := url[len("dvid://"):]
-		if sepIndex := strings.Index(dvidInstance, "/"); sepIndex != -1 {
-			dvidInstance = dvidInstance[0:sepIndex]
-		}
-		dvidProxyURL := clb.dvidProxies[dvidInstance]
-		if dvidProxyURL != "" {
-			return strings.Replace(url, "dvid://"+dvidInstance, dvidProxyURL, 1)
-		}
-		return strings.Replace(url, "dvid://", "http://", 1)
-	}
-	return url
+// GetCmdlineArgs creates command line arguments for a mipmaps service invocation
+func (clb serviceCmdlineBuilder) GetCmdlineArgs(a arg.Args) ([]string, error) {
+	var cmdargs []string
+	var err error
+	// TODO !!!!
+	return cmdargs, err
 }
 
-// retilerSplitter splitter for retile jobs
-type retilerSplitter struct {
+// retileJobSplitter splitter for retile jobs
+type retileJobSplitter struct {
 	resources    config.Config
-	dvidProxies  map[string]string
 	nextJobIndex uint64
 }
 
+// NewRetileJobSplitter creates a retile job splitter
+func NewRetileJobSplitter(resources config.Config) process.Splitter {
+	return retileJobSplitter{resources: resources}
+}
+
 // SplitJob splits the job into multiple parallelizable jobs
-func (s retilerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
+func (s retileJobSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 	var err error
 	var processedXTiles, processedYTiles, processedZLayers, processedDepth int64
 	var mipmapsAttrs Attrs
@@ -215,11 +231,9 @@ func (s retilerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 	processedWidth := processedXTiles * mipmapsAttrs.sourceTileWidth
 	processedHeight := processedYTiles * mipmapsAttrs.sourceTileHeight
 
-	cmdlineBuilder := retileCmdlineBuilder{
-		baseMipmapsCmdlineBuilder: baseMipmapsCmdlineBuilder{
-			resources:   s.resources,
-			dvidProxies: s.dvidProxies,
-		},
+	cmdlineBuilder, err := NewServiceCmdlineBuilder("local", "retile", s.resources)
+	if err != nil {
+		return err
 	}
 
 	for z := minZ; z < maxZ; z += processedDepth {
@@ -268,15 +282,19 @@ func (s retilerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 	return nil
 }
 
-// scalerSplitter splitter for scale jobs
-type scalerSplitter struct {
+// scaleJobSplitter splitter for scale jobs
+type scaleJobSplitter struct {
 	resources    config.Config
-	dvidProxies  map[string]string
 	nextJobIndex uint64
 }
 
+// NewScaleJobSplitter creates a scale job splitter
+func NewScaleJobSplitter(resources config.Config) process.Splitter {
+	return scaleJobSplitter{resources: resources}
+}
+
 // SplitJob splits the job into multiple parallelizable jobs
-func (s scalerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
+func (s scaleJobSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 	var err error
 	var processedZLayers int64
 	var mipmapsAttrs Attrs
@@ -296,11 +314,9 @@ func (s scalerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 	minZ := scaleAttrs.processedVolume.z
 	maxZ := scaleAttrs.processedVolume.maxZ()
 
-	cmdlineBuilder := scaleCmdlineBuilder{
-		baseMipmapsCmdlineBuilder: baseMipmapsCmdlineBuilder{
-			resources:   s.resources,
-			dvidProxies: s.dvidProxies,
-		},
+	cmdlineBuilder, err := NewServiceCmdlineBuilder("local", "scale", s.resources)
+	if err != nil {
+		return err
 	}
 
 	for z := minZ; z < maxZ; z += processedZLayers {
@@ -310,9 +326,9 @@ func (s scalerSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
 		}
 		newJobArgs := j.JArgs.Clone()
 
-		newJobArgs.UpdateInt64Arg("image_width", scaleAttrs.imageWidth)
-		newJobArgs.UpdateInt64Arg("image_height", scaleAttrs.imageHeight)
-		newJobArgs.UpdateInt64Arg("image_depth", scaleAttrs.imageDepth)
+		newJobArgs.UpdateInt64Arg("image_width", scaleAttrs.totalVolume.dx)
+		newJobArgs.UpdateInt64Arg("image_height", scaleAttrs.totalVolume.dy)
+		newJobArgs.UpdateInt64Arg("image_depth", scaleAttrs.totalVolume.dz)
 
 		newJobArgs.UpdateInt64Arg("source_min_x", scaleAttrs.sourceVolume.x)
 		newJobArgs.UpdateInt64Arg("source_min_y", scaleAttrs.sourceVolume.y)
@@ -351,6 +367,14 @@ func toCatmaidToolsStackFmt(fmtDescriptor string, context map[string]string) str
 	}
 	r := strings.NewReplacer(fmtDescriptorMapping...)
 	return r.Replace(fmtDescriptor)
+}
+
+func setJvmMemory(cmdargs []string, jvmMemory string) []string {
+	if jvmMemory != "" {
+		cmdargs = arg.AddArg(cmdargs, "-Xms", jvmMemory, "")
+		cmdargs = arg.AddArg(cmdargs, "-Xms", jvmMemory, "")
+	}
+	return cmdargs
 }
 
 func makeURL(base, path string) string {

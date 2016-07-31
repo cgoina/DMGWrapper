@@ -8,16 +8,16 @@ import (
 	"os"
 
 	"arg"
+	"cmdutils"
 	"config"
 	"dmg"
-	"drmaautils"
 	"process"
 )
 
 var (
 	sessionName          string
 	jobName              string
-	accountingID         string
+	accountID            string
 	destroySession       bool
 	dmgProcessorType     string
 	sectionProcessorType string
@@ -37,20 +37,20 @@ func main() {
 	cmdArgs := arg.NewArgs(dmgAttrs)
 
 	if len(os.Args) == 1 {
-		printDefaults(cmdFlags, cmdArgs.Flags)
+		arg.PrintDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(2)
 	}
 
-	parseArgs(cmdFlags)
+	cmdutils.ParseArgs(cmdFlags)
 	if helpFlag {
-		printDefaults(cmdFlags, cmdArgs.Flags)
+		arg.PrintDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(0)
 	}
 
 	leftArgs := cmdFlags.NArg()
 	if leftArgs < 1 {
 		log.Println("Missing operation")
-		printDefaults(cmdFlags, cmdArgs.Flags)
+		arg.PrintDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(2)
 	}
 	operation := os.Args[len(os.Args)-leftArgs]
@@ -60,7 +60,7 @@ func main() {
 	cmdArgs.Flags.Parse(os.Args[firstJobArgIndex:])
 
 	if dmgAttrs.IsHelpFlagSet() {
-		printDefaults(cmdFlags, cmdArgs.Flags)
+		arg.PrintDefaults(cmdFlags, cmdArgs.Flags)
 		os.Exit(0)
 	}
 	// read the configuration(s)
@@ -78,17 +78,6 @@ func main() {
 	}
 }
 
-// parseArgs parses the command line arguments up to the first unknown one.
-// The method recovers from the panic and allow the other command to continue parsing the rest of
-// the arguments from where it left off.
-func parseArgs(fs *flag.FlagSet) error {
-	defer func() {
-		recover()
-	}()
-
-	return fs.Parse(os.Args[1:])
-}
-
 // registerArgs registers command specific arguments.
 func registerArgs() (fs *flag.FlagSet) {
 	fs = flag.NewFlagSet("submitJobs", flag.ContinueOnError)
@@ -96,7 +85,7 @@ func registerArgs() (fs *flag.FlagSet) {
 
 	fs.StringVar(&sessionName, "sessionName", "dmg", "Grid job session name")
 	fs.StringVar(&jobName, "jobName", "dmg", "Job name")
-	fs.StringVar(&accountingID, "A", "", "Grid account id")
+	fs.StringVar(&accountID, "A", "", "Grid account id")
 	fs.BoolVar(&destroySession, "destroySession", false, "If true it destroyes the session when it's done if no errors have been encountered")
 	fs.StringVar(&dmgProcessorType, "dmgProcessor", "drmaa1", "Job processor type {echo, local, drmaa1, drmaa2}")
 	fs.StringVar(&sectionProcessorType, "sectionProcessor", "local", "Job processor type {echo, local, drmaa1, drmaa2}")
@@ -104,22 +93,16 @@ func registerArgs() (fs *flag.FlagSet) {
 	return fs
 }
 
-func printDefaults(fs ...*flag.FlagSet) {
-	for _, f := range fs {
-		f.SetOutput(nil)
-		f.PrintDefaults()
-	}
-}
-
 func createDMGService(operation string,
 	dmgProcessorType string,
 	args *arg.Args,
 	resources config.Config) (serviceFunc, error) {
 	var err error
-	dmgProcessor, err := createProcessor(dmgProcessorType,
+	dmgProcessor, err := cmdutils.CreateProcessor(dmgProcessorType,
+		accountID,
 		sessionName,
-		func() process.Processor {
-			return process.NewLocalCmdProcessor(resources)
+		func() (process.Processor, error) {
+			return process.NewLocalCmdProcessor(resources), nil
 		},
 		resources)
 	if err != nil {
@@ -142,14 +125,15 @@ func createDMGService(operation string,
 		}), nil
 	case "dmgSection":
 		return serviceFunc(func() error {
-			sectionProcessor, err := createProcessor(sectionProcessorType,
+			sectionProcessor, err := cmdutils.CreateProcessor(sectionProcessorType,
+				accountID,
 				sessionName,
-				func() process.Processor {
+				func() (process.Processor, error) {
 					return &dmg.SectionProcessor{
 						ImageProcessor:   bandsProcessor,
 						Resources:        resources,
 						DMGProcessorType: dmgProcessorType,
-					}
+					}, nil
 				},
 				resources)
 			if err != nil {
@@ -163,7 +147,7 @@ func createDMGService(operation string,
 					Operation:            "dmgSection",
 					DMGProcessorType:     dmgProcessorType,
 					SectionProcessorType: "local",
-					ClusterAccountID:     accountingID,
+					ClusterAccountID:     accountID,
 					SessionName:          sessionName,
 					JobName:              fmt.Sprintf("%s-section", jobName),
 				},
@@ -174,30 +158,4 @@ func createDMGService(operation string,
 		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection}",
 			dmgProcessorType)
 	}
-}
-
-func createProcessor(processorType, sName string,
-	localProcessorCtor func() process.Processor,
-	resources config.Config) (process.Processor, error) {
-	var p process.Processor
-	var err error
-	switch processorType {
-	case "echo":
-		p = process.NewEchoProcessor()
-	case "local":
-		p = localProcessorCtor()
-	case "drmaa1":
-		p, err = drmaautils.NewGridProcessor(sName,
-			accountingID,
-			drmaautils.NewDRMAAV1Proxy(),
-			resources)
-	case "drmaa2":
-		p, err = drmaautils.NewGridProcessor(sName,
-			accountingID,
-			drmaautils.NewDRMAAV2Proxy(),
-			resources)
-	default:
-		err = fmt.Errorf("Invalid processor type: '%s'. Supported types are: {echo, local,drmaa1, drmaa2}", processorType)
-	}
-	return p, err
 }

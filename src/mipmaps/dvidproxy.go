@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"config"
 )
@@ -25,9 +26,28 @@ type dvidproxy struct {
 	store           tileStore
 }
 
+// DVIDProxyURLMapping mapping of DVID proxy urls to DVID service http urls
+type DVIDProxyURLMapping map[string]string
+
+// formatRootURL converts a DVID url (one that has a dvid scheme, i.e., starts with dvid://) to an http url
+func (dpm DVIDProxyURLMapping) formatRootURL(url string) string {
+	if strings.HasPrefix(url, "dvid://") {
+		dvidInstance := url[len("dvid://"):]
+		if sepIndex := strings.Index(dvidInstance, "/"); sepIndex != -1 {
+			dvidInstance = dvidInstance[0:sepIndex]
+		}
+		dvidProxyURL := dpm[dvidInstance]
+		if dvidProxyURL != "" {
+			return strings.Replace(url, "dvid://"+dvidInstance, dvidProxyURL, 1)
+		}
+		return strings.Replace(url, "dvid://", "http://", 1)
+	}
+	return url
+}
+
 // StartDVIDProxies start DVID proxies
-func StartDVIDProxies(cfg config.Config) (map[string]string, error) {
-	dvidProxiesMap := make(map[string]string)
+func StartDVIDProxies(cfg config.Config) (DVIDProxyURLMapping, error) {
+	dvidProxiesMap := DVIDProxyURLMapping{}
 
 	log.Printf("Start DVID Proxies ...")
 	dvids := getDvidProxies(cfg)

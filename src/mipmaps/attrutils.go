@@ -270,11 +270,11 @@ func (a *Attrs) extractMipmapsAttrs(ja *arg.Args) (err error) {
 	if a.sourceBackground, err = ja.GetUintArgValue("source_bg"); err != nil {
 		return err
 	}
-	if targetOrientation, err := ja.GetIntArgValue("orientation"); err != nil {
+	var targetOrientation int
+	if targetOrientation, err = ja.GetIntArgValue("orientation"); err != nil {
 		return err
-	} else {
-		a.targetOrientation = orientation(targetOrientation)
 	}
+	a.targetOrientation = orientation(targetOrientation)
 	if a.targetImageType, err = ja.GetStringArgValue("image_type"); err != nil {
 		return err
 	}
@@ -403,6 +403,39 @@ func (a *Attrs) validate() error {
 	// validate the depth
 	if a.imageDepth <= 0 && a.sourceMaxZ <= 0 {
 		return fmt.Errorf("Invalid image depth: imageDepth=%v, maxZ=%v", a.imageDepth, a.sourceMaxZ)
+	}
+	// validate source
+	if err := validateInterval(a.sourceVolume.x, a.sourceVolume.maxX(), a.totalVolume.dx); err != nil {
+		return fmt.Errorf("Invalid source x bounds %v: %v", a.sourceVolume, err)
+	}
+	if err := validateInterval(a.sourceVolume.y, a.sourceVolume.maxY(), a.totalVolume.dy); err != nil {
+		return fmt.Errorf("Invalid source y bounds %v: %v", a.sourceVolume, err)
+	}
+	if err := validateInterval(a.sourceVolume.z, a.sourceVolume.maxZ(), a.totalVolume.dz); err != nil {
+		return fmt.Errorf("Invalid source z bounds %v: %v", a.sourceVolume, err)
+	}
+	// validate target
+	if err := validateInterval(a.processedVolume.x, a.processedVolume.maxX(), a.sourceVolume.dx); err != nil {
+		return fmt.Errorf("Invalid target x bounds %v: %v", a.processedVolume, err)
+	}
+	if err := validateInterval(a.processedVolume.y, a.processedVolume.maxY(), a.sourceVolume.dy); err != nil {
+		return fmt.Errorf("Invalid target y bounds %v: %v", a.processedVolume, err)
+	}
+	if err := validateInterval(a.processedVolume.z, a.processedVolume.maxZ(), a.sourceVolume.dz); err != nil {
+		return fmt.Errorf("Invalid target z bounds %v: %v", a.processedVolume, err)
+	}
+	return nil
+}
+
+func validateInterval(lowerBound, upperBound, absoluteMax int64) error {
+	if lowerBound < 0 {
+		return fmt.Errorf("Lower interval limit must be GT 0: %d", lowerBound)
+	}
+	if upperBound <= lowerBound {
+		return fmt.Errorf("Lower bound %d must be less than the max bound %d", lowerBound, upperBound)
+	}
+	if upperBound > absoluteMax {
+		return fmt.Errorf("Upper bound %d cannot be greater than %d", upperBound, absoluteMax)
 	}
 	return nil
 }
