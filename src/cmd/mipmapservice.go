@@ -67,8 +67,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error reading the config file(s) %v: %v", mipmapsAttrs.Configs, err)
 	}
+	if err = mipmapsAttrs.Validate(); err != nil {
+		log.Fatal("Invalid arguments: %v", err)
+	}
 
-	service, err := createMipmapsService(operation, mipmapsProcessorType, cmdArgs, *resources)
+	service, err := createMipmapsService(operation, mipmapsProcessorType, mipmapsAttrs, cmdArgs, *resources)
 	if err != nil {
 		log.Fatalf("Error creating the DMG service: %v", err)
 	}
@@ -94,6 +97,7 @@ func registerArgs() (fs *flag.FlagSet) {
 
 func createMipmapsService(operation string,
 	mipmapsProcessorType string,
+	mipmapsAttrs *mipmaps.Attrs,
 	args *arg.Args,
 	resources config.Config) (serviceFunc, error) {
 	var err error
@@ -154,20 +158,14 @@ func createMipmapsService(operation string,
 	case "fullPyramid":
 		return serviceFunc(func() error {
 			var jobs []process.Job
-			retileCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder("retile", mipmapsProcessorType, accountID, jobName, resources)
-			if err != nil {
-				return err
-			}
+			retileCmdlineBuilder := mipmaps.NewServiceCmdlineBuilder("retile", mipmapsProcessorType, accountID, jobName, resources)
 			jobs = append(jobs, process.Job{
 				Executable:     resources.GetStringProperty("mipmapsExec"),
 				Name:           jobName,
 				JArgs:          args.Clone(),
 				CmdlineBuilder: retileCmdlineBuilder,
 			})
-			scaleCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder("scale", mipmapsProcessorType, accountID, jobName, resources)
-			if err != nil {
-				return err
-			}
+			scaleCmdlineBuilder := mipmaps.NewServiceCmdlineBuilder("scale", mipmapsProcessorType, accountID, jobName, resources)
 			jobs = append(jobs, process.Job{
 				Executable:     resources.GetStringProperty("mipmapsExec"),
 				Name:           jobName,
@@ -176,10 +174,61 @@ func createMipmapsService(operation string,
 			})
 			return processPipelinedJobs(mipmapsProcessorType, resources, jobs)
 		}), nil
-	case "orthoviews":
-	case "fullOrthoviews":
+	case "orthoviews": // this operation creates the scale level 0 for the XZ and ZY views; the operation assumes that the entire pyramid for XY exists
+		return serviceFunc(func() error {
+			j := process.Job{
+				Executable: resources.GetStringProperty("mipmapsExec"),
+				Name:       jobName,
+				JArgs:      args.Clone(),
+			}
+			jobSplitter := orthoviewsSplitter{
+				mipmapsAttrs:  mipmapsAttrs,
+				orthoViewOp:   "retile",
+				processorType: mipmapsProcessorType,
+				resources:     resources,
+			}
+			orthoviewsProcessor := process.NewParallelProcessor(mipmapsProcessor, jobSplitter, resources)
+			return orthoviewsProcessor.Run(j)
+		}), nil
+	case "fullOrthoviews": // this operation retiles and generates all scale levels for the XZ and ZY views; this assumes that the entire pyramid for XY exists
+		return serviceFunc(func() error {
+			j := process.Job{
+				Executable: resources.GetStringProperty("mipmapsExec"),
+				Name:       jobName,
+				JArgs:      args.Clone(),
+			}
+			jobSplitter := orthoviewsSplitter{
+				mipmapsAttrs:  mipmapsAttrs,
+				orthoViewOp:   "fullPyramid",
+				processorType: mipmapsProcessorType,
+				resources:     resources,
+			}
+			orthoviewsProcessor := process.NewParallelProcessor(mipmapsProcessor, jobSplitter, resources)
+			return orthoviewsProcessor.Run(j)
+		}), nil
+	case "allOrthoviews": // this operation retiles and generates all scale levels for all projections XY, XZ and ZY
+		return serviceFunc(func() error {
+			var jobs []process.Job
+			// first generate the full pyramid for xy
+			xyJobName := jobName + "_xy"
+			xyCmdlineBuilder := mipmaps.NewServiceCmdlineBuilder("fullPyramid", mipmapsProcessorType, accountID, xyJobName, resources)
+			jobs = append(jobs, process.Job{
+				Executable:     resources.GetStringProperty("mipmapsExec"),
+				Name:           xyJobName,
+				JArgs:          mipmapsAttrs.GenerateXYArgs(args),
+				CmdlineBuilder: xyCmdlineBuilder,
+			})
+			fullOrthoviewsCmdlineBuilder := mipmaps.NewServiceCmdlineBuilder("fullOrthoviews", mipmapsProcessorType, accountID, jobName, resources)
+			jobs = append(jobs, process.Job{
+				Executable:     resources.GetStringProperty("mipmapsExec"),
+				Name:           jobName,
+				JArgs:          args.Clone(),
+				CmdlineBuilder: fullOrthoviewsCmdlineBuilder,
+			})
+			return processPipelinedJobs(mipmapsProcessorType, resources, jobs)
+		}), nil
 	default:
-		return nil, fmt.Errorf("Unknown operation %s. Valid values are: retile | scale | fullPyramid | orthoviews | fullOrthoviews", operation)
+		return nil, fmt.Errorf("Unknown operation %s. Valid values are: retile | scale | fullPyramid | orthoviews | allOrthoviews | fullOrthoviews", operation)
 	}
 	return nil, err
 }
@@ -201,4 +250,40 @@ func processPipelinedJobs(mipmapsProcessorType string, resources config.Config, 
 		}
 	}
 	return nil
+}
+
+type orthoviewsSplitter struct {
+	mipmapsAttrs  *mipmaps.Attrs
+	orthoViewOp   string
+	processorType string
+	resources     config.Config
+}
+
+// SplitJob splits the job into multiple subjobs
+func (s orthoviewsSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
+	xzJob, err := s.createOrthoViewJob(j, "xz", s.mipmapsAttrs.GenerateXZArgs)
+	if err != nil {
+		return fmt.Errorf("Error creating the XZ orthoview job: %v", err)
+	}
+	jch <- *xzJob
+
+	zyJob, err := s.createOrthoViewJob(j, "zy", s.mipmapsAttrs.GenerateZYArgs)
+	if err != nil {
+		return fmt.Errorf("Error creating the ZY orthoview job: %v", err)
+	}
+	jch <- *zyJob
+
+	return nil
+}
+
+func (s orthoviewsSplitter) createOrthoViewJob(j process.Job, orthoview string, jobArgsGenerator func(*arg.Args) arg.Args) (*process.Job, error) {
+	jobName := j.Name + "_" + orthoview
+	cmdlineBuilder := mipmaps.NewServiceCmdlineBuilder(s.orthoViewOp, s.processorType, accountID, jobName, s.resources)
+	orthoviewJob := process.Job{
+		Executable:     s.resources.GetStringProperty("mipmapsExec"),
+		Name:           jobName,
+		JArgs:          jobArgsGenerator(&j.JArgs),
+		CmdlineBuilder: cmdlineBuilder,
+	}
+	return &orthoviewJob, nil
 }

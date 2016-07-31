@@ -166,17 +166,12 @@ type serviceCmdlineBuilder struct {
 }
 
 // NewServiceCmdlineBuilder creates a command line builder for a mipmaps service
-func NewServiceCmdlineBuilder(operation, processorType, accountID, jobName string, resources config.Config) (arg.CmdlineArgBuilder, error) {
-	switch operation {
-	case "retile", "scale":
-	default:
-		return nil, fmt.Errorf("Invalid operation - ServiceCmdlineBuilder supports only retile and scale")
-	}
+func NewServiceCmdlineBuilder(operation, processorType, accountID, jobName string, resources config.Config) arg.CmdlineArgBuilder {
 	return serviceCmdlineBuilder{
 		processorType: processorType,
 		operation:     operation,
 		resources:     resources,
-	}, nil
+	}
 }
 
 // GetCmdlineArgs creates command line arguments for a mipmaps service invocation
@@ -376,10 +371,7 @@ func (s retileJobSplitter) SplitJob(j process.Job, jch chan<- process.Job) error
 	processedWidth := processedXTiles * mipmapsAttrs.sourceTileWidth
 	processedHeight := processedYTiles * mipmapsAttrs.sourceTileHeight
 
-	cmdlineBuilder, err := NewServiceCmdlineBuilder("retile", "local", "", "", s.resources)
-	if err != nil {
-		return err
-	}
+	cmdlineBuilder := NewServiceCmdlineBuilder("retile", "local", "", "", s.resources)
 
 	for z := minZ; z < maxZ; z += processedDepth {
 		jobDepth := processedDepth
@@ -459,10 +451,7 @@ func (s scaleJobSplitter) SplitJob(j process.Job, jch chan<- process.Job) error 
 	minZ := scaleAttrs.processedVolume.z
 	maxZ := scaleAttrs.processedVolume.maxZ()
 
-	cmdlineBuilder, err := NewServiceCmdlineBuilder("scale", "local", "", "", s.resources)
-	if err != nil {
-		return err
-	}
+	cmdlineBuilder := NewServiceCmdlineBuilder("scale", "local", "", "", s.resources)
 
 	for z := minZ; z < maxZ; z += processedZLayers {
 		jobDepth := processedZLayers

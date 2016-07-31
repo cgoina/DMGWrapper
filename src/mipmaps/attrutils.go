@@ -390,8 +390,11 @@ func (a *Attrs) updateProcessedVolume() {
 	setDim(a.sourceVolume.z, a.targetMaxZ, a.processedVolume.setMaxZ)
 }
 
-// validate arguments
-func (a *Attrs) validate() error {
+// Validate arguments
+func (a *Attrs) Validate() error {
+	a.updateTotalVolume()
+	a.updateSourceVolume()
+	a.updateProcessedVolume()
 	// validate the width
 	if a.imageWidth <= 0 && a.sourceMaxX <= 0 {
 		return fmt.Errorf("Invalid image width: imageWidth=%v, maxX=%v", a.imageWidth, a.sourceMaxX)
@@ -448,6 +451,81 @@ func (a Attrs) getScaleZFactor() float64 {
 		scaleZ = a.sourceZRes / a.sourceXYRes
 	}
 	return scaleZ
+}
+
+// GenerateXYArgs generate the arguments for the XY projection
+func (a Attrs) GenerateXYArgs(args *arg.Args) arg.Args {
+	xyMipmaps := a
+	xyMipmaps.targetOrientation = XY
+	xyMipmaps.sourceTileWidth = a.sourceTileWidth
+	xyMipmaps.sourceTileHeight = a.sourceTileHeight
+	xyMipmaps.targetTileWidth = a.targetTileWidth
+	xyMipmaps.targetTileHeight = a.targetTileHeight
+	xyMipmaps.sourceXYRes = 1.0
+	xyMipmaps.sourceZRes = 1.0
+	xyMipmaps.sourceScale = 0
+	xyMipmaps.sourceRootURL = a.sourceRootURL
+	xyMipmaps.sourceStackFormat = a.sourceStackFormat
+	xyMipmaps.targetRootURL = a.targetRootURL
+	xyMipmaps.targetStackFormat = a.xyTargetStackFormat
+	xyMipmaps.interpolation = "NN"
+	return xyMipmaps.overwriteOrthoArgs(args)
+}
+
+// GenerateXZArgs generate the arguments for the XZ projection
+func (a Attrs) GenerateXZArgs(args *arg.Args) arg.Args {
+	xzMipmaps := a
+	xzMipmaps.targetOrientation = XZ
+	xzMipmaps.sourceTileWidth = a.targetTileWidth
+	xzMipmaps.sourceTileHeight = a.targetTileHeight
+	xzMipmaps.targetTileWidth = a.targetTileWidth
+	xzMipmaps.targetTileHeight = a.targetTileHeight
+	xzMipmaps.sourceXYRes = a.sourceXYRes
+	xzMipmaps.sourceZRes = a.sourceZRes
+	xzMipmaps.sourceScale = a.sourceScale
+	xzMipmaps.sourceRootURL = a.targetRootURL
+	xzMipmaps.sourceStackFormat = a.xyTargetStackFormat
+	xzMipmaps.targetRootURL = a.targetRootURL
+	xzMipmaps.targetStackFormat = a.xzTargetStackFormat
+	xzMipmaps.interpolation = "NL"
+	return xzMipmaps.overwriteOrthoArgs(args)
+}
+
+// GenerateZYArgs generate the arguments for the ZY projection
+func (a Attrs) GenerateZYArgs(args *arg.Args) arg.Args {
+	zyMipmaps := a
+	zyMipmaps.targetOrientation = ZY
+	zyMipmaps.sourceTileWidth = a.targetTileWidth
+	zyMipmaps.sourceTileHeight = a.targetTileHeight
+	zyMipmaps.targetTileWidth = a.targetTileWidth
+	zyMipmaps.targetTileHeight = a.targetTileHeight
+	zyMipmaps.sourceXYRes = a.sourceXYRes
+	zyMipmaps.sourceZRes = a.sourceZRes
+	zyMipmaps.sourceScale = a.sourceScale
+	zyMipmaps.sourceRootURL = a.targetRootURL
+	zyMipmaps.sourceStackFormat = a.xyTargetStackFormat
+	zyMipmaps.targetRootURL = a.targetRootURL
+	zyMipmaps.targetStackFormat = a.zyTargetStackFormat
+	zyMipmaps.interpolation = "NL"
+	return zyMipmaps.overwriteOrthoArgs(args)
+}
+
+func (a Attrs) overwriteOrthoArgs(args *arg.Args) arg.Args {
+	orthoArgs := args.Clone()
+	orthoArgs.UpdateAnyArg("orientation", a.targetOrientation)
+	orthoArgs.UpdateInt64Arg("source_tile_width", a.sourceTileWidth)
+	orthoArgs.UpdateInt64Arg("source_tile_height", a.sourceTileHeight)
+	orthoArgs.UpdateInt64Arg("target_tile_width", a.targetTileWidth)
+	orthoArgs.UpdateInt64Arg("target_tile_height", a.targetTileHeight)
+	orthoArgs.UpdateFloat64Arg("source_xy_res", a.sourceXYRes)
+	orthoArgs.UpdateFloat64Arg("source_z_res", a.sourceZRes)
+	orthoArgs.UpdateUintArg("source_scale", a.sourceScale)
+	orthoArgs.UpdateStringArg("source_url", a.sourceRootURL)
+	orthoArgs.UpdateStringArg("source_stack_format", a.sourceStackFormat)
+	orthoArgs.UpdateStringArg("target_url", a.targetRootURL)
+	orthoArgs.UpdateStringArg("target_stack_format", a.targetStackFormat)
+	orthoArgs.UpdateStringArg("interpolation", a.interpolation)
+	return orthoArgs
 }
 
 func (a Attrs) scaleArgs() Attrs {

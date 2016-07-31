@@ -192,6 +192,11 @@ func (a Args) GetStringListArgValue(name string) ([]string, error) {
 	return v.([]string), nil
 }
 
+// UpdateFloat64Arg set the float64 value for the named argument
+func (a *Args) UpdateFloat64Arg(name string, value float64) {
+	a.changedArgs[name] = value
+}
+
 // UpdateIntArg set the int value for the named argument
 func (a *Args) UpdateIntArg(name string, value int) {
 	a.changedArgs[name] = value
@@ -214,6 +219,11 @@ func (a *Args) UpdateStringArg(name string, value string) {
 
 // UpdateStringListArg set the string list value for the named argument
 func (a *Args) UpdateStringListArg(name string, value []string) {
+	a.changedArgs[name] = value
+}
+
+// UpdateAnyArg set the value for the named argument
+func (a *Args) UpdateAnyArg(name string, value interface{}) {
 	a.changedArgs[name] = value
 }
 
