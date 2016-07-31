@@ -154,7 +154,7 @@ func createMipmapsService(operation string,
 	case "fullPyramid":
 		return serviceFunc(func() error {
 			var jobs []process.Job
-			retileCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder(mipmapsProcessorType, "retile", resources)
+			retileCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder("retile", mipmapsProcessorType, accountID, jobName, resources)
 			if err != nil {
 				return err
 			}
@@ -164,7 +164,7 @@ func createMipmapsService(operation string,
 				JArgs:          args.Clone(),
 				CmdlineBuilder: retileCmdlineBuilder,
 			})
-			scaleCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder(mipmapsProcessorType, "scale", resources)
+			scaleCmdlineBuilder, err := mipmaps.NewServiceCmdlineBuilder("scale", mipmapsProcessorType, accountID, jobName, resources)
 			if err != nil {
 				return err
 			}
