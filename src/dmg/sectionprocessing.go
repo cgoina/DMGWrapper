@@ -438,3 +438,36 @@ func readCoordFile(coordFile string) (*CoordInfo, error) {
 	}
 	return coordInfo, nil
 }
+
+// ZSplitter job splitter by Z
+type ZSplitter struct {
+}
+
+// SplitJob splits the job into multiple parallelizable jobs
+func (s ZSplitter) SplitJob(j process.Job, jch chan<- process.Job) error {
+	var err error
+	var dmgAttrs Attrs
+
+	if err = dmgAttrs.extractDmgAttrs(&j.JArgs); err != nil {
+		return err
+	}
+	minZ := dmgAttrs.minZ
+	maxZ := dmgAttrs.maxZ
+	for z := minZ; z <= maxZ; z++ {
+		newJobArgs := j.JArgs.Clone()
+
+		newJobArgs.UpdateStringArg("pixels", strings.Replace(dmgAttrs.sourcePixels, "{z}", strconv.FormatInt(z, 10), -1))
+		newJobArgs.UpdateStringArg("labels", strings.Replace(dmgAttrs.sourceLabels, "{z}", strconv.FormatInt(z, 10), -1))
+		newJobArgs.UpdateStringArg("targetDir", strings.Replace(dmgAttrs.targetDir, "{z}", strconv.FormatInt(z, 10), -1))
+
+		newJob := process.Job{
+			Executable:     j.Executable,
+			Name:           fmt.Sprintf("%s_%d", j.Name, z),
+			JArgs:          newJobArgs,
+			CmdlineBuilder: j.CmdlineBuilder,
+		}
+		jch <- newJob
+	}
+
+	return nil
+}

@@ -154,8 +154,41 @@ func createDMGService(operation string,
 			}
 			return sectionProcessor.Run(j)
 		}), nil
+	case "dmgSections":
+		return serviceFunc(func() error {
+			sectionProcessor, err := cmdutils.CreateProcessor(sectionProcessorType,
+				accountID,
+				sessionName,
+				func() (process.Processor, error) {
+					return &dmg.SectionProcessor{
+						ImageProcessor:   bandsProcessor,
+						Resources:        resources,
+						DMGProcessorType: dmgProcessorType,
+					}, nil
+				},
+				resources)
+			if err != nil {
+				return err
+			}
+			j := process.Job{
+				Executable: resources.GetStringProperty("dmgexec"),
+				Name:       jobName,
+				JArgs:      *args,
+				CmdlineBuilder: dmg.SectionJobCmdlineBuilder{
+					Operation:            "dmgSection",
+					DMGProcessorType:     dmgProcessorType,
+					SectionProcessorType: sectionProcessorType,
+					ClusterAccountID:     accountID,
+					SessionName:          sessionName,
+					JobName:              fmt.Sprintf("%s-section", jobName),
+				},
+			}
+			jobSplitter := dmg.ZSplitter{}
+			orthoviewsProcessor := process.NewParallelProcessor(sectionProcessor, jobSplitter, resources)
+			return orthoviewsProcessor.Run(j)
+		}), nil
 	default:
-		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection}",
+		return nil, fmt.Errorf("Invalid DMG operation: %s. Supported values are:{dmgType, dmgSection, dmgSections}",
 			dmgProcessorType)
 	}
 }

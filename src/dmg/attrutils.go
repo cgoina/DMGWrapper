@@ -27,6 +27,7 @@ type Attrs struct {
 	tileWidth        int
 	tileHeight       int
 	clientIndex      int
+	minZ, maxZ       int64
 	sourcePixelsList arg.StringList
 	sourceLabelsList arg.StringList
 	destImgList      arg.StringList
@@ -63,6 +64,8 @@ func (a *Attrs) DefineArgs(fs *flag.FlagSet) {
 	fs.BoolVar(&a.helpFlag, "h", false, "gray image flag")
 	fs.IntVar(&a.clientIndex, "clientIndex", 0, "Client index")
 	fs.IntVar(&a.nThreads, "threads", 1, "Number of threads")
+	fs.Int64Var(&a.minZ, "minZ", 0, "Min Z")
+	fs.Int64Var(&a.maxZ, "maxZ", 0, "Max Z (inclusive)")
 	fs.Var(&a.sourcePixelsList, "pixelsList", "List of image pixels")
 	fs.Var(&a.sourceLabelsList, "labelsList", "List of image labels")
 	fs.Var(&a.destImgList, "outList", "List of output images")
@@ -186,6 +189,12 @@ func (a *Attrs) extractDmgAttrs(ja *arg.Args) (err error) {
 		return err
 	}
 	if a.destImg, err = ja.GetStringArgValue("out"); err != nil {
+		return err
+	}
+	if a.minZ, err = ja.GetInt64ArgValue("minZ"); err != nil {
+		return err
+	}
+	if a.maxZ, err = ja.GetInt64ArgValue("maxZ"); err != nil {
 		return err
 	}
 	if a.sourcePixelsList, err = ja.GetStringListArgValue("pixelsList"); err != nil {
